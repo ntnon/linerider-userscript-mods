@@ -1,7 +1,7 @@
 // ==UserScript==
 
-// @name         Template Mod
-// @author       Malizma
+// @name         Bosh Placer Mod
+// @author       Ntnon
 // @description  Linerider.com userscript template
 // @version      1.0
 

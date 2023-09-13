@@ -1,19 +1,22 @@
 // ==UserScript==
 
-// @name         Template Mod
-// @author       Malizma
-// @description  Linerider.com userscript template
+// @name         Line Rider Bosh Placer Mod
+// @author       Anton
+// @description  Add or move bosh to the end of the previously drawn line in Line Rider
 // @version      1.0
 
 // @namespace    http://tampermonkey.net/
 // @match        https://www.linerider.com/*
 // @match        https://*.official-linerider.com/*
 // @match        http://localhost:8000/*
+// @match        https://*.surge.sh/*
 // @grant        none
-
+// @downloadURL  https://github.com/ntnon/linerider-userscript-mods/blob/main/line-rider-bosh-placer-mod.js
+// @updateURL    https://github.com/ntnon/linerider-userscript-mods/blob/main/line-rider-bosh-placer-mod.js
 // ==/UserScript==
 
-// Utility functions called towards source code
+// jshint asi: true
+// jshint esversion: 6
 
 const updateLines = (linesToRemove, linesToAdd, name) => ({
   type: 'UPDATE_LINES',

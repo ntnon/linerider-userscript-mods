@@ -38,7 +38,7 @@ const getSimulatorCommittedTrack = state => state.simulator.committedEngine
 
 // Class to hold back-end information
 
-class TemplateMod {
+class BoshPlaceMod {
   constructor (store, initState) {
     this.store = store
     this.state = initState
@@ -140,7 +140,7 @@ function main () {
 
   // Class to hold front-end information
 
-  class TemplateModComponent extends React.Component {
+  class BoshPlaceModComponent extends React.Component {
     constructor (props) {
       super(props)
 
@@ -159,7 +159,7 @@ function main () {
 
       // Pull from logic class
 
-      this.myMod = new TemplateMod(store, this.state)
+      this.myMod = new BoshPlaceMod(store, this.state)
 
       // Function called when window updates
 
@@ -248,13 +248,13 @@ function main () {
             },
             onClick: this.onActivate.bind(this)
           },
-          'Template Mod'
+          'Bosh Place Mod'
         )
       )
     }
   }
 
-  window.registerCustomSetting(TemplateModComponent)
+  window.registerCustomSetting(BoshPlaceModComponent)
 }
 
 // Initializes mod

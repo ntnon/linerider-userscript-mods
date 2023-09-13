@@ -11,8 +11,8 @@
 // @match        http://localhost:8000/*
 // @match        https://*.surge.sh/*
 // @grant        none
-// @downloadURL  https://github.com/ntnon/linerider-userscript-mods/blob/main/line-rider-bosh-placer-mod.js
-// @updateURL    https://github.com/ntnon/linerider-userscript-mods/blob/main/line-rider-bosh-placer-mod.js
+// @downloadURL  https://github.com/ntnon/linerider-userscript-mods/blob/main/line-rider-bosh-placer-mod.user.js.user.js
+// @updateURL    https://github.com/ntnon/linerider-userscript-mods/blob/main/line-rider-bosh-placer-mod.user.js.user.js
 // ==/UserScript==
 
 // jshint asi: true

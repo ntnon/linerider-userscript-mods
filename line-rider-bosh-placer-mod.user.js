@@ -186,11 +186,9 @@ function main() {
         // Add any input variables used in UI here
 
         // Example: components of a rectangle
-
-        width: 0,
-        height: 0,
-        xOff: 0,
-        yOff: 0
+        boshId: 0,
+        x: 0,
+        y: 0,
       }
 
       // Pull from logic class
@@ -239,20 +237,6 @@ function main() {
 
     */
 
-    renderSlider(key, title, props) {
-      props = {
-        ...props,
-        value: this.state[key],
-        onChange: create => this.setState({ [key]: parseFloat(create.target.value) })
-      }
-
-      return create('div', null,
-        title,
-        create('input', { style: { width: '3em' }, type: 'number', ...props }),
-        create('input', { type: 'range', ...props, onFocus: create => create.target.blur() })
-      )
-    }
-
     // Main render function
 
     render() {
@@ -260,16 +244,10 @@ function main() {
         this.state.active && create('div', null,
 
           // Render UI elements for the mod here
-
           // Example: Rectangle inputs width, height, x, y
-
-          this.renderSlider('width', 'Width', { min: 0, max: 100, step: 1 }),
-          this.renderSlider('height', 'Height', { min: 0, max: 100, step: 1 }),
-          this.renderSlider('xOff', 'X Offset', { min: 0, max: 100, step: 1 }),
-          this.renderSlider('yOff', 'Y Offset', { min: 0, max: 100, step: 1 }),
-
-          // Commit changes button
-
+          create('input', { style: { width: '3em' }, type: 'number', ...props }, 'Bosh ID'),
+          create('input', { style: { width: '3em' }, type: 'number', ...props }, 'X'),
+          create('input', { style: { width: '3em' }, type: 'number', ...props }, 'Y'),
           create('button', { style: { float: 'left' }, onClick: () => this.onCommit() },
             'Commit'
           )

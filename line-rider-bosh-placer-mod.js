@@ -1,7 +1,7 @@
 // ==UserScript==
 
 // @name         Line Rider Bosh Placer Mod
-// @author       Anton
+// @author       Ntnon
 // @description  Add or move bosh to the end of the previously drawn line in Line Rider
 // @version      1.0
 

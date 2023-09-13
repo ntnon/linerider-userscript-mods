@@ -36,10 +36,46 @@ const revertTrackChanges = () => ({
 
 const getSimulatorCommittedTrack = state => state.simulator.committedEngine
 
+const NEW_TRACK = 'NEW_TRACK'
+const LOAD_TRACK = 'LOAD_TRACK'
+const SAVE_TRACK = 'SAVE_TRACK'
+
+const newTrack = (isV61 = false) => ({
+  type: NEW_TRACK,
+  payload: {
+    startPosition: { x: 0, y: 0 },
+    version: isV61 ? '6.1' : '6.2',
+    label: '',
+    creator: '',
+    description: '',
+    dirty: false,
+    saveTime: null,
+    viewOnly: false,
+    derivedFrom: null
+  }
+})
+
+const loadTrackAction = (trackData) => ({
+  type: LOAD_TRACK,
+  payload: {
+    viewOnly: trackData["for viewing only, please don't steal tracks"] === true,
+    ...trackData
+  }
+})
+
+const saveTrackAction = () => ({ type: SAVE_TRACK })
+
+const removeLines = (lineIds) => updateLines('REMOVE_LINES', lineIds, null)
+
+const setRiders = (riders) => ({
+  type: SET_RIDERS,
+  payload: riders
+})
+
 // Class to hold back-end information
 
 class BoshPlaceMod {
-  constructor (store, initState) {
+  constructor(store, initState) {
     this.store = store
     this.state = initState
 
@@ -63,7 +99,7 @@ class BoshPlaceMod {
     }
   }
 
-  onUpdate (nextState = this.state) {
+  onUpdate(nextState = this.state) {
     let shouldUpdate = false
 
     // Preview the lines if the mod is active
@@ -130,7 +166,7 @@ class BoshPlaceMod {
 
 // Function to create UI component
 
-function main () {
+function main() {
   const {
     React,
     store
@@ -141,7 +177,7 @@ function main () {
   // Class to hold front-end information
 
   class BoshPlaceModComponent extends React.Component {
-    constructor (props) {
+    constructor(props) {
       super(props)
 
       this.state = {
@@ -168,11 +204,11 @@ function main () {
       })
     }
 
-    componentWillUpdate (nextProps, nextState) {
+    componentWillUpdate(nextProps, nextState) {
       this.myMod.onUpdate(nextState)
     }
 
-    onActivate () {
+    onActivate() {
       if (this.state.active) {
 
         //Do stuff when the mod is turned off here
@@ -186,7 +222,7 @@ function main () {
       }
     }
 
-    onCommit () {
+    onCommit() {
       const committed = this.myMod.commit()
       if (committed) {
         this.setState({ active: false })
@@ -203,7 +239,7 @@ function main () {
 
     */
 
-    renderSlider (key, title, props) {
+    renderSlider(key, title, props) {
       props = {
         ...props,
         value: this.state[key],
@@ -219,7 +255,7 @@ function main () {
 
     // Main render function
 
-    render () {
+    render() {
       return create('div', null,
         this.state.active && create('div', null,
 
@@ -273,7 +309,7 @@ if (window.registerCustomSetting) {
 
 // Example: Generate a rectangle from inputs
 
-function* genLines ({ width = 0, height = 0, xOff = 0, yOff = 0 } = {}) {
+function* genLines({ width = 0, height = 0, xOff = 0, yOff = 0 } = {}) {
   const { V2 } = window
 
   // Create points from inputs

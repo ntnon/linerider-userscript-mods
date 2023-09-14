@@ -74,7 +74,7 @@ const setRiders = (riders) => ({
 
 // Class to hold back-end information
 
-class BoshPlaceMod {
+class ScarfColorChangerMod {
   constructor(store, initState) {
     this.store = store
     this.state = initState
@@ -91,6 +91,8 @@ class BoshPlaceMod {
   // Committing changes
 
   commit() {
+    console.log("commited!")
+    changeScarfColor(1, 1)
     if (this.changed) {
       this.store.dispatch(commitTrackChanges())
       this.store.dispatch(revertTrackChanges())
@@ -145,15 +147,7 @@ class BoshPlaceMod {
 
         // Example: Creates a line based on slider values
 
-        for (let { p1, p2 } of genLines(this.state)) {
-          myLines.push({
-            x1: p1.x,
-            y1: p1.y,
-            x2: p2.x,
-            y2: p2.y,
-            type: 2
-          })
-        }
+
 
         if (myLines.length > 0) {
           this.store.dispatch(addLines(myLines))
@@ -164,6 +158,12 @@ class BoshPlaceMod {
   }
 }
 
+function changeScarfColor(riderId, color) {
+  const track = getSimulatorCommittedTrack(this.store.getState())
+  console.log(JSON.stringify(track))
+
+  return "0"
+}
 // Function to create UI component
 
 function main() {
@@ -176,7 +176,7 @@ function main() {
 
   // Class to hold front-end information
 
-  class BoshPlaceModComponent extends React.Component {
+  class ScarfColorChangerModComponent extends React.Component {
     constructor(props) {
       super(props)
 
@@ -187,13 +187,12 @@ function main() {
 
         // Example: components of a rectangle
         boshId: 0,
-        x: 0,
-        y: 0,
+        hexValue: "#000000",
       }
 
       // Pull from logic class
 
-      this.myMod = new BoshPlaceMod(store, this.state)
+      this.myMod = new ScarfColorChangerMod(store, this.state)
 
       // Function called when window updates
 
@@ -260,13 +259,13 @@ function main() {
             },
             onClick: this.onActivate.bind(this)
           },
-          'Bosh Place Mod'
+          'Scarf Color Changer Mod'
         )
       )
     }
   }
 
-  window.registerCustomSetting(BoshPlaceModComponent)
+  window.registerCustomSetting(ScarfColorChangerModComponent)
 }
 
 // Initializes mod

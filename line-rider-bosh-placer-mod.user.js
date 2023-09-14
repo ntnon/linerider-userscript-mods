@@ -245,9 +245,7 @@ function main() {
 
           // Render UI elements for the mod here
           // Example: Rectangle inputs width, height, x, y
-          create('input', { style: { width: '3em' }, type: 'number', ...props }, 'Bosh ID'),
-          create('input', { style: { width: '3em' }, type: 'number', ...props }, 'X'),
-          create('input', { style: { width: '3em' }, type: 'number', ...props }, 'Y'),
+
           create('button', { style: { float: 'left' }, onClick: () => this.onCommit() },
             'Commit'
           )

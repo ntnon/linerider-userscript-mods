@@ -72,6 +72,10 @@ const setRiders = (riders) => ({
   payload: riders
 })
 
+const getRiders = state => state.simulator.engine.engine.state.riders
+
+const getCurrentScript = state => state.trackData.script
+
 // Class to hold back-end information
 
 class ScarfColorChangerMod {
@@ -91,8 +95,7 @@ class ScarfColorChangerMod {
   // Committing changes
 
   commit() {
-    console.log("commited!")
-    changeScarfColor(1, 1)
+
     if (this.changed) {
       this.store.dispatch(commitTrackChanges())
       this.store.dispatch(revertTrackChanges())
@@ -143,6 +146,23 @@ class ScarfColorChangerMod {
       if (this.state.active) {
         let myLines = []
 
+        console.log("commited!")
+        const track = getSimulatorCommittedTrack(this.store.getState())
+        const riders = getRiders(this.store.getState())
+        const rider1 = riders[0]
+        const script = getCurrentScript(this.store.getState())
+        console.log(JSON.stringify(script))
+        console.log(script)
+        console.log(typeof script)
+        this.store.dispatch(setTrackScript("i removed the script!"))
+        rider1.opacity = 0.5
+        riders[0] = rider1
+        this.store.dispatch(setRiders(riders))
+        const currentScript = getCurrentScript(this.store.getState())
+        console.log(JSON.stringify(track))
+        console.log(JSON.stringify(riders))
+        console.log(JSON.stringify(currentScript))
+
         // Add any mod logic here
 
         // Example: Creates a line based on slider values
@@ -158,10 +178,15 @@ class ScarfColorChangerMod {
   }
 }
 
-function changeScarfColor(riderId, color) {
-  const track = getSimulatorCommittedTrack(this.store.getState())
-  console.log(JSON.stringify(track))
+function changeRider(riders, riderId, opacity = 1, color = false) {
+  // Apply the rider option to the rider
+}
 
+function applyOpacity(rider, opacity) {
+  // Toggle the visibility of a given rider
+}
+
+function changeScarfColor(rider, color) {
   return "0"
 }
 // Function to create UI component

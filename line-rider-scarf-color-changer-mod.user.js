@@ -30,6 +30,8 @@ const commitTrackChanges = () => ({
   type: 'COMMIT_TRACK_CHANGES'
 })
 
+const getTrackLinesLocked = state => state.trackLinesLocked
+
 const revertTrackChanges = () => ({
   type: 'REVERT_TRACK_CHANGES'
 })
@@ -64,17 +66,18 @@ const loadTrackAction = (trackData) => ({
 })
 
 const saveTrackAction = () => ({ type: SAVE_TRACK })
-
 const removeLines = (lineIds) => updateLines('REMOVE_LINES', lineIds, null)
-
-const setRiders = (riders) => ({
-  type: SET_RIDERS,
-  payload: riders
+const getRiders = state => state.simulator.engine.engine.state.riders
+const getCurrentScript = state => state.trackData.script
+const setTrackScript = (script) => ({
+  type: 'SET_TRACK_SCRIPT',
+  payload: script
 })
 
-const getRiders = state => state.simulator.engine.engine.state.riders
-
-const getCurrentScript = state => state.trackData.script
+const setRiders = (riders) => ({
+  type: 'SET_RIDERS',
+  payload: riders
+})
 
 // Class to hold back-end information
 
@@ -82,11 +85,11 @@ class ScarfColorChangerMod {
   constructor(store, initState) {
     this.store = store
     this.state = initState
-
     this.changed = false
-
+    this.trackLinesLocked = getTrackLinesLocked(this.store.getState())
     this.track = this.store.getState().simulator.committedEngine
-
+    this.script = getCurrentScript(this.store.getState())
+    this.riders = getRiders(this.store.getState())
     store.subscribeImmediate(() => {
       this.onUpdate()
     })
@@ -95,10 +98,29 @@ class ScarfColorChangerMod {
   // Committing changes
 
   commit() {
+    const remountable = 1
+    console.log(this.trackLinesLocked)
+    const lines = this.track.lines
+    if (lines.length === 0) return false
+    const line = lines[lines.length - 1]
+    const startPosition = {
+      "startPosition": {
+        "x": line.x2,
+        "y": line.y2
+      }
+    }
+    const startVelocity = {
+      "startVelocity": {
+        "x": 0.4,
+        "y": 0
+      },
+    }
+    const newRider = { startPosition, startVelocity, "remountable": remountable }
+    const newRiders = this.riders.push(newRider)
+    this.store.dispatch(setRiders(newRiders))
+    this.store.dispatch(saveTrackAction())
 
     if (this.changed) {
-      this.store.dispatch(commitTrackChanges())
-      this.store.dispatch(revertTrackChanges())
       this.changed = false
       return true
     }
@@ -127,6 +149,7 @@ class ScarfColorChangerMod {
 
     if (this.state.active) {
       const track = getSimulatorCommittedTrack(this.store.getState())
+      const riders = getRiders(this.store.getState())
 
       if (this.track !== track) {
         this.track = track
@@ -146,23 +169,6 @@ class ScarfColorChangerMod {
       if (this.state.active) {
         let myLines = []
 
-        console.log("commited!")
-        const track = getSimulatorCommittedTrack(this.store.getState())
-        const riders = getRiders(this.store.getState())
-        const rider1 = riders[0]
-        const script = getCurrentScript(this.store.getState())
-        console.log(JSON.stringify(script))
-        console.log(script)
-        console.log(typeof script)
-        this.store.dispatch(setTrackScript("i removed the script!"))
-        rider1.opacity = 0.5
-        riders[0] = rider1
-        this.store.dispatch(setRiders(riders))
-        const currentScript = getCurrentScript(this.store.getState())
-        console.log(JSON.stringify(track))
-        console.log(JSON.stringify(riders))
-        console.log(JSON.stringify(currentScript))
-
         // Add any mod logic here
 
         // Example: Creates a line based on slider values
@@ -175,6 +181,26 @@ class ScarfColorChangerMod {
         }
       }
     }
+  }
+}
+/*
+[
+        {
+            "id": 1,
+            "type": 1,
+            "x1": -89,
+            "y1": -5.25,
+            "x2": -86,
+            "y2": -3.6,
+            "flipped": false,
+            "leftExtended": false,
+            "rightExtended": false
+        },
+*/
+
+function getLineEndPosition(line) {
+  return {
+
   }
 }
 

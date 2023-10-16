@@ -1,326 +1,286 @@
 // ==UserScript==
-
-// @name         Line Rider Scarf Color Changer Mod
-// @author       Ntnon
-// @description  Easily edit the scarf color of bosh in Line Rider
-// @version      1.0
-
+// @name         Line Rider Selection Rotate and Scale Mod
 // @namespace    http://tampermonkey.net/
+// @version      0.4
+// @description  Adds ability to rotate and scale selections
+// @author       David Lu
 // @match        https://www.linerider.com/*
 // @match        https://*.official-linerider.com/*
 // @match        http://localhost:8000/*
-// @match        https://*.surge.sh/*
+// @downloadURL  https://github.com/EmergentStudios/linerider-userscript-mods/raw/master/selection-scale-rotate.user.js
 // @grant        none
-// @downloadURL  https://github.com/ntnon/linerider-userscript-mods/blob/main/line-rider-scarf-color-changer-mod.user.js.user.js
-// @updateURL    https://github.com/ntnon/linerider-userscript-mods/blob/main/line-rider-scarf-color-changer-mod.user.js.user.js
 // ==/UserScript==
 
 // jshint asi: true
 // jshint esversion: 6
 
-const updateLines = (linesToRemove, linesToAdd, name) => ({
-  type: 'UPDATE_LINES',
-  payload: { linesToRemove, linesToAdd },
-  meta: { name: name }
+/* constants */
+const SELECT_TOOL = 'SELECT_TOOL'
+const EMPTY_SET = new Set()
+const LINE_WIDTH = 2
+
+/* actions */
+const setTool = (tool) => ({
+  type: 'SET_TOOL',
+  payload: tool
 })
 
-const addLines = (line) => updateLines(null, line, 'ADD_LINES')
+const updateLines = (linesToRemove, linesToAdd) => ({
+  type: 'UPDATE_LINES',
+  payload: { linesToRemove, linesToAdd }
+})
+
+const setLines = (line) => updateLines(null, line)
 
 const commitTrackChanges = () => ({
   type: 'COMMIT_TRACK_CHANGES'
 })
 
-const getTrackLinesLocked = state => state.trackLinesLocked
-
 const revertTrackChanges = () => ({
   type: 'REVERT_TRACK_CHANGES'
 })
 
+const setEditScene = (scene) => ({
+  type: 'SET_RENDERER_SCENE',
+  payload: { key: 'edit', scene }
+})
+
+/* selectors */
+const getActiveTool = state => state.selectedTool
+const getToolState = (state, toolId) => state.toolState[toolId]
+const getSelectToolState = state => getToolState(state, SELECT_TOOL)
 const getSimulatorCommittedTrack = state => state.simulator.committedEngine
+const getEditorZoom = state => state.camera.editorZoom
 
-const NEW_TRACK = 'NEW_TRACK'
-const LOAD_TRACK = 'LOAD_TRACK'
-const SAVE_TRACK = 'SAVE_TRACK'
-
-const newTrack = (isV61 = false) => ({
-  type: NEW_TRACK,
-  payload: {
-    startPosition: { x: 0, y: 0 },
-    version: isV61 ? '6.1' : '6.2',
-    label: '',
-    creator: '',
-    description: '',
-    dirty: false,
-    saveTime: null,
-    viewOnly: false,
-    derivedFrom: null
-  }
-})
-
-const loadTrackAction = (trackData) => ({
-  type: LOAD_TRACK,
-  payload: {
-    viewOnly: trackData["for viewing only, please don't steal tracks"] === true,
-    ...trackData
-  }
-})
-
-const saveTrackAction = () => ({ type: SAVE_TRACK })
-const removeLines = (lineIds) => updateLines('REMOVE_LINES', lineIds, null)
-const getRiders = state => state.simulator.engine.engine.state.riders
-const getCurrentScript = state => state.trackData.script
-const setTrackScript = (script) => ({
-  type: 'SET_TRACK_SCRIPT',
-  payload: script
-})
-
-const setRiders = (riders) => ({
-  type: 'SET_RIDERS',
-  payload: riders
-})
-
-// Class to hold back-end information
-
-class ScarfColorChangerMod {
-  constructor(store, initState) {
+class ScaleRotateMod {
+  constructor (store, initState) {
     this.store = store
-    this.state = initState
+
     this.changed = false
-    this.trackLinesLocked = getTrackLinesLocked(this.store.getState())
-    this.track = this.store.getState().simulator.committedEngine
-    this.script = getCurrentScript(this.store.getState())
-    this.riders = getRiders(this.store.getState())
+    this.state = initState
+
+    this.track = getSimulatorCommittedTrack(this.store.getState())
+    this.selectedPoints = EMPTY_SET
+
     store.subscribeImmediate(() => {
       this.onUpdate()
     })
   }
 
-  // Committing changes
-
-  commit() {
-    const remountable = 1
-    console.log(this.trackLinesLocked)
-    const lines = this.track.lines
-    if (lines.length === 0) return false
-    const line = lines[lines.length - 1]
-    const startPosition = {
-      "startPosition": {
-        "x": line.x2,
-        "y": line.y2
-      }
-    }
-    const startVelocity = {
-      "startVelocity": {
-        "x": 0.4,
-        "y": 0
-      },
-    }
-    const newRider = { startPosition, startVelocity, "remountable": remountable }
-    const newRiders = this.riders.push(newRider)
-    this.store.dispatch(setRiders(newRiders))
-    this.store.dispatch(saveTrackAction())
-
+  commit () {
     if (this.changed) {
+      this.store.dispatch(commitTrackChanges())
+      this.store.dispatch(revertTrackChanges())
+      this.store.dispatch(setEditScene(new Millions.Scene()))
       this.changed = false
       return true
     }
   }
 
-  onUpdate(nextState = this.state) {
+  onUpdate (nextState = this.state) {
     let shouldUpdate = false
-
-    // Preview the lines if the mod is active
-
-    if (!this.state.active && nextState.active) {
-      window.previewLinesInFastSelect = true
-    }
-    if (this.state.active && !nextState.active) {
-      window.previewLinesInFastSelect = false
-    }
-
-    // Update when user changes inputs of UI component
 
     if (this.state !== nextState) {
       this.state = nextState
       shouldUpdate = true
     }
 
-    // Update when specific changes in track happen
-
     if (this.state.active) {
       const track = getSimulatorCommittedTrack(this.store.getState())
-      const riders = getRiders(this.store.getState())
-
       if (this.track !== track) {
         this.track = track
         shouldUpdate = true
       }
+
+      const selectToolState = getSelectToolState(this.store.getState())
+
+      let selectedPoints = selectToolState.selectedPoints
+
+      if (!selectToolState.multi) {
+        selectedPoints = EMPTY_SET
+      }
+
+      if (!setsEqual(this.selectedPoints, selectedPoints)) {
+        this.selectedPoints = selectedPoints
+        shouldUpdate = true
+      }
     }
 
-    // Changes made on update
-
     if (shouldUpdate) {
-
       if (this.changed) {
         this.store.dispatch(revertTrackChanges())
+        this.store.dispatch(setEditScene(new Millions.Scene()))
         this.changed = false
       }
 
-      if (this.state.active) {
-        let myLines = []
+      if (this.state.active && this.selectedPoints.size > 0 && (this.state.scale !== 1 || this.state.scaleX !== 1 || this.state.scaleY !== 1 || this.state.rotate !== 0)) {
+        const selectedLines = [...getLinesFromPoints(this.selectedPoints)]
+          .map(id => this.track.getLine(id))
+          .filter(l => l)
 
-        // Add any mod logic here
+        const {x, y, width, height} = getBoundingBox(selectedLines)
+        const c = new V2({
+          x: x + width / 2,
+          y: y + height / 2
+        })
 
-        // Example: Creates a line based on slider values
+        const transform = this.getTransform()
+        const transformedLines = []
 
+        for (let line of selectedLines) {
+          const p1 = new V2(line.p1).sub(c).transform(transform).add(c)
+          const p2 = new V2(line.p2).sub(c).transform(transform).add(c)
 
-
-        if (myLines.length > 0) {
-          this.store.dispatch(addLines(myLines))
-          this.changed = true
+          transformedLines.push({
+            ...line.toJSON(),
+            x1: p1.x,
+            y1: p1.y,
+            x2: p2.x,
+            y2: p2.y
+          })
         }
+
+        this.store.dispatch(setLines(transformedLines))
+
+        const zoom = getEditorZoom(this.store.getState())
+        const renderedBox = genBoxOutline(x, y, x + width, y + height, 1 / zoom, new Millions.Color(0, 0, 0, 255), 0)
+
+        for (let line of renderedBox) {
+          const p1 = new V2(line.p1).sub(c).transform(transform).add(c)
+          const p2 = new V2(line.p2).sub(c).transform(transform).add(c)
+          line.p1.x = p1.x
+          line.p1.y = p1.y
+          line.p2.x = p2.x
+          line.p2.y = p2.y
+        }
+        this.store.dispatch(setEditScene(Millions.Scene.fromEntities(renderedBox)))
+        this.changed = true
       }
     }
   }
-}
-/*
-[
-        {
-            "id": 1,
-            "type": 1,
-            "x1": -89,
-            "y1": -5.25,
-            "x2": -86,
-            "y2": -3.6,
-            "flipped": false,
-            "leftExtended": false,
-            "rightExtended": false
-        },
-*/
 
-function getLineEndPosition(line) {
-  return {
-
+  getTransform() {
+    const transform = rotateTransform(this.state.rotate * Math.PI / 180)
+    transform[0] *= this.state.scale
+    transform[3] *= this.state.scale
+    transform[0] *= this.state.scaleX
+    transform[3] *= this.state.scaleY
+    return transform
   }
 }
 
-function changeRider(riders, riderId, opacity = 1, color = false) {
-  // Apply the rider option to the rider
-}
-
-function applyOpacity(rider, opacity) {
-  // Toggle the visibility of a given rider
-}
-
-function changeScarfColor(rider, color) {
-  return "0"
-}
-// Function to create UI component
-
-function main() {
+function main () {
   const {
     React,
     store
   } = window
 
-  const create = React.createElement
+  const e = React.createElement
 
-  // Class to hold front-end information
-
-  class ScarfColorChangerModComponent extends React.Component {
-    constructor(props) {
+  class ScaleRotateModComponent extends React.Component {
+    constructor (props) {
       super(props)
 
       this.state = {
         active: false,
-
-        // Add any input variables used in UI here
-
-        // Example: components of a rectangle
-        boshId: 0,
-        hexValue: "#000000",
+        scale: 1,
+        scaleX: 1,
+        scaleY: 1,
+        rotate: 0,
       }
 
-      // Pull from logic class
-
-      this.myMod = new ScarfColorChangerMod(store, this.state)
-
-      // Function called when window updates
+      this.scaleRotateMod = new ScaleRotateMod(store, this.state)
 
       store.subscribe(() => {
+        const selectToolActive = getActiveTool(store.getState()) === SELECT_TOOL
 
+        if (this.state.active && !selectToolActive) {
+          this.setState({ active: false })
+        }
       })
+
+      this.onCommit = () => {
+        this.scaleRotateMod.commit()
+        this.setState({
+          scale: 1,
+          scaleX: 1,
+          scaleY: 1,
+          rotate: 0
+        })
+      }
+      this.onMouseCommit = () => {
+        this.onCommit()
+        window.removeEventListener('mouseup', this.onMouseCommit)
+      }
+      this.onKeyCommit = e => {
+        if (e.key === 'Enter') {
+          this.onCommit()
+        }
+      }
     }
 
-    componentWillUpdate(nextProps, nextState) {
-      this.myMod.onUpdate(nextState)
+    componentWillUpdate (nextProps, nextState) {
+      this.scaleRotateMod.onUpdate(nextState)
     }
 
-    onActivate() {
+    onActivate () {
       if (this.state.active) {
-
-        //Do stuff when the mod is turned off here
-
         this.setState({ active: false })
       } else {
-
-        //Do stuff when the mod is turned on here
-
+        store.dispatch(setTool(SELECT_TOOL))
         this.setState({ active: true })
       }
     }
 
-    onCommit() {
-      const committed = this.myMod.commit()
-      if (committed) {
-        this.setState({ active: false })
+    renderSlider (key, props) {
+      props = {
+        ...props,
+        value: this.state[key],
+        onChange: e => this.setState({ [key]: parseFloatOrDefault(e.target.value) })
       }
+      const rangeProps = {
+        ...props,
+        onMouseDown: () => window.addEventListener('mouseup', this.onMouseCommit)
+      }
+      const numberProps = {
+        ...props,
+        onKeyUp: this.onKeyCommit,
+        onBlur: this.onCommit
+      }
+      return e('div', null,
+        key,
+        e('input', { style: { width: '3em' }, type: 'number', ...numberProps }),
+        e('input', { type: 'range', ...rangeProps, onFocus: e => e.target.blur() })
+      )
     }
 
-    /*
- 
-    Creates a slider element from an input variable given from this.state
- 
-    @param {key} The input variable stored in this.state
-    @param {title} Title displayed on the UI element
-    @param {props} The UI properties issued to the slider element
- 
-    */
-
-    // Main render function
-
-    render() {
-      return create('div', null,
-        this.state.active && create('div', null,
-
-          // Render UI elements for the mod here
-          // Example: Rectangle inputs width, height, x, y
-
-          create('button', { style: { float: 'left' }, onClick: () => this.onCommit() },
-            'Commit'
-          )
+    render () {
+      return e('div',
+        null,
+        this.state.active && e('div', null,
+          this.renderSlider('scaleX', { min: 0, max: 2, step: 0.01 }),
+          this.renderSlider('scaleY', { min: 0, max: 2, step: 0.01 }),
+          this.renderSlider('scale', { min: 0, max: 2, step: 0.01 }),
+          this.renderSlider('rotate', { min: -180, max: 180, step: 1 })
         ),
-
-        // Creates main mod button here
-
-        create('button',
+        e('button',
           {
             style: {
               backgroundColor: this.state.active ? 'lightblue' : null
             },
             onClick: this.onActivate.bind(this)
           },
-          'Scarf Color Changer Mod'
+          'Scale Rotate Mod'
         )
       )
     }
   }
 
-  window.registerCustomSetting(ScarfColorChangerModComponent)
+  // this is a setting and not a standalone tool because it extends the select tool
+  window.registerCustomSetting(ScaleRotateModComponent)
 }
 
-// Initializes mod
-
+/* init */
 if (window.registerCustomSetting) {
   main()
 } else {
@@ -331,39 +291,98 @@ if (window.registerCustomSetting) {
   }
 }
 
-// Utility functions can go here
+/* utils */
+function setsEqual (a, b) {
+  if (a === b) {
+    return true
+  }
+  if (a.size !== b.size) {
+    return false
+  }
+  for (let x of a) {
+    if (!b.has(x)) {
+      return false
+    }
+  }
+  return true
+}
 
-// Example: Generate a rectangle from inputs
+function getLinesFromPoints (points) {
+  return new Set([...points].map(point => point >> 1))
+}
 
-function* genLines({ width = 0, height = 0, xOff = 0, yOff = 0 } = {}) {
+function rotateTransform (rads) {
   const { V2 } = window
 
-  // Create points from inputs
+  let u = V2.from(1, 0).rot(rads)
+  let v = V2.from(0, 1).rot(rads)
 
-  const pointA = [xOff, yOff]
-  const pointB = [xOff, yOff + height]
-  const pointC = [xOff + width, yOff + height]
-  const pointD = [xOff + width, yOff]
+  return [u.x, v.x, u.y, v.y, 0, 0]
+}
 
-  // Return lines connecting points
+function parseFloatOrDefault (string, defaultValue = 0) {
+  const x = parseFloat(string)
+  return isNaN(x) ? defaultValue : x
+}
 
-  yield {
-    p1: V2.from(pointA[0], pointA[1]),
-    p2: V2.from(pointB[0], pointB[1])
+function getBoundingBox (lines) {
+  if (lines.size === 0) {
+    return {
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0
+    }
+  }
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+
+  for (let line of lines) {
+    minX = Math.min(line.p1.x, minX)
+    minY = Math.min(line.p1.y, minY)
+    maxX = Math.max(line.p1.x, maxX)
+    maxY = Math.max(line.p1.y, maxY)
+
+    minX = Math.min(line.p2.x, minX)
+    minY = Math.min(line.p2.y, minY)
+    maxX = Math.max(line.p2.x, maxX)
+    maxY = Math.max(line.p2.y, maxY)
   }
 
-  yield {
-    p1: V2.from(pointB[0], pointB[1]),
-    p2: V2.from(pointC[0], pointC[1])
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY
   }
+}
 
-  yield {
-    p1: V2.from(pointC[0], pointC[1]),
-    p2: V2.from(pointD[0], pointD[1])
+function genLine (x1, y1, x2, y2, thickness, color, zIndex) {
+  let p1 = {
+    x: x1,
+    y: y1,
+    colorA: color,
+    colorB: color,
+    thickness
   }
+  let p2 = {
+    x: x2,
+    y: y2,
+    colorA: color,
+    colorB: color,
+    thickness
+  }
+  return new Millions.Line(p1, p2, 3, zIndex)
+}
 
-  yield {
-    p1: V2.from(pointD[0], pointD[1]),
-    p2: V2.from(pointA[0], pointA[1])
-  }
+
+function genBoxOutline (x1, y1, x2, y2, thickness, color, zIndex) {
+  return [
+    genLine(x1, y1, x1, y2, thickness, color, zIndex),
+    genLine(x1, y2, x2, y2, thickness, color, zIndex + 0.1),
+    genLine(x2, y2, x2, y1, thickness, color, zIndex + 0.2),
+    genLine(x2, y1, x1, y1, thickness, color, zIndex + 0.3)
+  ]
 }

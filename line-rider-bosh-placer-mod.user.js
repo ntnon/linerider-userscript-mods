@@ -1,319 +1,199 @@
 // ==UserScript==
 
-// @name         Line Rider Bosh Placer Mod
-// @author       Ntnon
-// @description  Add or move bosh to the end of the previously drawn line in Line Rider
-// @version      1.0
+// @name         _
+// @namespace    https://www.linerider.com/
+// @author       _
+// @description  _
+// @version      1.0.0
+// @icon         https://www.linerider.com/favicon.ico
 
-// @namespace    http://tampermonkey.net/
 // @match        https://www.linerider.com/*
 // @match        https://*.official-linerider.com/*
-// @match        http://localhost:8000/*
+// @match        http://localhost:*/*
 // @match        https://*.surge.sh/*
+
+
+
+// @downloadURL  _
+// @updateURL    _
+// @homepageURL  _
+// @supportURL   _
 // @grant        none
-// @downloadURL  https://github.com/ntnon/linerider-userscript-mods/blob/main/line-rider-bosh-placer-mod.user.js.user.js
-// @updateURL    https://github.com/ntnon/linerider-userscript-mods/blob/main/line-rider-bosh-placer-mod.user.js.user.js
+
 // ==/UserScript==
 
-// jshint asi: true
-// jshint esversion: 6
+/* global Actions, Selectors */
 
-const updateLines = (linesToRemove, linesToAdd, name) => ({
-  type: 'UPDATE_LINES',
-  payload: { linesToRemove, linesToAdd },
-  meta: { name: name }
-})
+const Actions = {
+  commitTrackChanges: () => ({
+    type: 'COMMIT_TRACK_CHANGES'
+  }),
+  revertTrackChanges: () => ({
+    type: 'REVERT_TRACK_CHANGES'
+  }),
+  setRiders: (newRiders) => ({ type: "SET_RIDERS", payload: newRiders })
+}
 
-const addLines = (line) => updateLines(null, line, 'ADD_LINES')
-
-const commitTrackChanges = () => ({
-  type: 'COMMIT_TRACK_CHANGES'
-})
-
-const revertTrackChanges = () => ({
-  type: 'REVERT_TRACK_CHANGES'
-})
-
-const getSimulatorCommittedTrack = state => state.simulator.committedEngine
-
-const NEW_TRACK = 'NEW_TRACK'
-const LOAD_TRACK = 'LOAD_TRACK'
-const SAVE_TRACK = 'SAVE_TRACK'
-
-const newTrack = (isV61 = false) => ({
-  type: NEW_TRACK,
-  payload: {
-    startPosition: { x: 0, y: 0 },
-    version: isV61 ? '6.1' : '6.2',
-    label: '',
-    creator: '',
-    description: '',
-    dirty: false,
-    saveTime: null,
-    viewOnly: false,
-    derivedFrom: null
-  }
-})
-
-const loadTrackAction = (trackData) => ({
-  type: LOAD_TRACK,
-  payload: {
-    viewOnly: trackData["for viewing only, please don't steal tracks"] === true,
-    ...trackData
-  }
-})
-
-const saveTrackAction = () => ({ type: SAVE_TRACK })
-
-const removeLines = (lineIds) => updateLines('REMOVE_LINES', lineIds, null)
-
-const setRiders = (riders) => ({
-  type: SET_RIDERS,
-  payload: riders
-})
-
-// Class to hold back-end information
-
-class BoshPlaceMod {
+class RiderMod {
   constructor(store, initState) {
-    this.store = store
-    this.state = initState
+    this.store = store;
+    this.state = initState;
+    this.name = "Rider Mod"
+    this.riders = []
+    this.lines = []
+    this.lastLine = { p1: { x: 0, y: 0 }, p2: { x: 0, y: 0 } }
+    /* Substate Variables */
 
-    this.changed = false
-
-    this.track = this.store.getState().simulator.committedEngine
+    this.changed = false;
 
     store.subscribeImmediate(() => {
-      this.onUpdate()
-    })
+      this.onUpdate();
+    });
   }
 
-  // Committing changes
-
   commit() {
-    if (this.changed) {
-      this.store.dispatch(commitTrackChanges())
-      this.store.dispatch(revertTrackChanges())
-      this.changed = false
-      return true
-    }
+    if (!this.changed) return false;
+    this.store.dispatch(Actions.commitTrackChanges());
+    this.store.dispatch(Actions.revertTrackChanges());
+    this.changed = false;
+    return true;
   }
 
   onUpdate(nextState = this.state) {
-    let shouldUpdate = false
-
-    // Preview the lines if the mod is active
-
-    if (!this.state.active && nextState.active) {
-      window.previewLinesInFastSelect = true
-    }
-    if (this.state.active && !nextState.active) {
-      window.previewLinesInFastSelect = false
-    }
-
-    // Update when user changes inputs of UI component
+    let shouldUpdate = false;
 
     if (this.state !== nextState) {
-      this.state = nextState
-      shouldUpdate = true
+      this.state = nextState;
+      shouldUpdate = true;
     }
-
-    // Update when specific changes in track happen
 
     if (this.state.active) {
-      const track = getSimulatorCommittedTrack(this.store.getState())
-
-      if (this.track !== track) {
-        this.track = track
-        shouldUpdate = true
+      /* Check State Changes */
+      const riders = this.store.getState().simulator.engine.engine.state.riders
+      const lines = this.store.getState().simulator.engine.engine.state.lines.buffer
+      if (this.riders != riders) {
+        this.riders = riders
       }
+      if (this.lines != lines) {
+        this.lines = lines
+      }
+
     }
 
-    // Changes made on update
+    if (!shouldUpdate) return;
 
-    if (shouldUpdate) {
-
-      if (this.changed) {
-        this.store.dispatch(revertTrackChanges())
-        this.changed = false
-      }
-
-      if (this.state.active) {
-        let myLines = []
-
-        // Add any mod logic here
-
-        // Example: Creates a line based on slider values
-
-        for (let { p1, p2 } of genLines(this.state)) {
-          myLines.push({
-            x1: p1.x,
-            y1: p1.y,
-            x2: p2.x,
-            y2: p2.y,
-            type: 2
-          })
-        }
-
-        if (myLines.length > 0) {
-          this.store.dispatch(addLines(myLines))
-          this.changed = true
-        }
-      }
+    if (this.changed) {
+      this.store.dispatch(Actions.revertTrackChanges());
+      this.changed = false;
     }
+
+    if (!this.state.active) return;
+
+    /* Apply Changes */
+
+    const lastLine = this.lines[this.lines.length - 1]
+
+    if (selectedLines.size == 1) {
+      const selectedLine = Array.from(selectedLines)[0]
+      const newRiders = [
+        ...this.riders,
+        {
+          "startPosition": {
+            "x": selectedLine.p2.x ?? 0,
+            "y": selectedLine.p2.y ?? 0
+          },
+          "startVelocity": {
+            "x": 0.4,
+            "y": 0
+          },
+          "remountable": 1
+        }
+      ]
+      this.store.dispatch(Actions.setRiders(newRiders))
+      this.riders = []
+      this.changed = true;
+    }
+
   }
 }
-
-// Function to create UI component
 
 function main() {
   const {
     React,
     store
-  } = window
+  } = window;
+  const create = React.createElement;
 
-  const create = React.createElement
-
-  // Class to hold front-end information
-
-  class BoshPlaceModComponent extends React.Component {
+  class RiderModComponent extends React.Component {
     constructor(props) {
-      super(props)
+      super(props);
 
       this.state = {
-        active: false,
+        active: false
+        /* State Props */
+      };
 
-        // Add any input variables used in UI here
-
-        // Example: components of a rectangle
-        boshId: 0,
-        x: 0,
-        y: 0,
-      }
-
-      // Pull from logic class
-
-      this.myMod = new BoshPlaceMod(store, this.state)
-
-      // Function called when window updates
+      this.mod = new RiderMod(store, this.state);
 
       store.subscribe(() => {
 
-      })
+      });
     }
 
     componentWillUpdate(nextProps, nextState) {
-      this.myMod.onUpdate(nextState)
+      this.mod.onUpdate(nextState);
     }
 
     onActivate() {
       if (this.state.active) {
-
-        //Do stuff when the mod is turned off here
-
-        this.setState({ active: false })
+        this.setState({ active: false });
       } else {
-
-        //Do stuff when the mod is turned on here
-
-        this.setState({ active: true })
+        this.setState({ active: true });
       }
     }
 
     onCommit() {
-      const committed = this.myMod.commit()
+      const committed = this.mod.commit();
+
       if (committed) {
-        this.setState({ active: false })
+        this.setState({ active: false });
       }
     }
 
-    /*
-
-    Creates a slider element from an input variable given from this.state
-
-    @param {key} The input variable stored in this.state
-    @param {title} Title displayed on the UI element
-    @param {props} The UI properties issued to the slider element
-
-    */
-
-    // Main render function
-
     render() {
-      return create('div', null,
-        this.state.active && create('div', null,
-
-          // Render UI elements for the mod here
-          // Example: Rectangle inputs width, height, x, y
-
-          create('button', { style: { float: 'left' }, onClick: () => this.onCommit() },
-            'Commit'
+      return create("div", null,
+        this.state.active && create("div", null,
+          /* Mod UI */
+          create("button",
+            {
+              style: { float: "left" },
+              onClick: this.onCommit.bind(this)
+            },
+            "Commit"
           )
         ),
-
-        // Creates main mod button here
-
-        create('button',
+        create("button",
           {
-            style: {
-              backgroundColor: this.state.active ? 'lightblue' : null
-            },
+            style: { backgroundColor: this.state.active ? "lightblue" : null },
             onClick: this.onActivate.bind(this)
           },
-          'Bosh Place Mod'
+          this.mod.name
         )
-      )
+      );
     }
   }
 
-  window.registerCustomSetting(BoshPlaceModComponent)
+  window.registerCustomSetting(RiderModComponent);
 }
-
-// Initializes mod
 
 if (window.registerCustomSetting) {
-  main()
+  main();
 } else {
-  const prevCb = window.onCustomToolsApiReady
+  const prevCb = window.onCustomToolsApiReady;
   window.onCustomToolsApiReady = () => {
-    if (prevCb) prevCb()
-    main()
-  }
+    if (prevCb) prevCb();
+    main();
+  };
 }
 
-// Utility functions can go here
-
-// Example: Generate a rectangle from inputs
-
-function* genLines({ width = 0, height = 0, xOff = 0, yOff = 0 } = {}) {
-  const { V2 } = window
-
-  // Create points from inputs
-
-  const pointA = [xOff, yOff]
-  const pointB = [xOff, yOff + height]
-  const pointC = [xOff + width, yOff + height]
-  const pointD = [xOff + width, yOff]
-
-  // Return lines connecting points
-
-  yield {
-    p1: V2.from(pointA[0], pointA[1]),
-    p2: V2.from(pointB[0], pointB[1])
-  }
-
-  yield {
-    p1: V2.from(pointB[0], pointB[1]),
-    p2: V2.from(pointC[0], pointC[1])
-  }
-
-  yield {
-    p1: V2.from(pointC[0], pointC[1]),
-    p2: V2.from(pointD[0], pointD[1])
-  }
-
-  yield {
-    p1: V2.from(pointD[0], pointD[1]),
-    p2: V2.from(pointA[0], pointA[1])
-  }
-}
+/* Utility Functions */

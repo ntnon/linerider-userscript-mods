@@ -3,7 +3,7 @@
 // @name         _
 // @namespace    https://www.linerider.com/
 // @author       _
-// @description  _
+// @description  Bosh placer mod
 // @version      1.0.0
 // @icon         https://www.linerider.com/favicon.ico
 
@@ -51,6 +51,41 @@ class RiderMod {
     });
   }
 
+  add() {
+    const lastLine = this.lines[this.lines.length - 1]
+    if (lastLine) {
+      const newRiders = [
+        ...this.riders,
+        {
+          "startPosition": {
+            "x": lastLine.p2.x ?? 0,
+            "y": lastLine.p2.y ?? 0
+          },
+          "startVelocity": {
+            "x": 0.4,
+            "y": 0
+          },
+          "remountable": 1
+        }
+      ]
+      this.store.dispatch(Actions.setRiders(newRiders))
+      this.riders = []
+      this.changed = true;
+    }
+  }
+
+  remove() {
+    // Create a copy of the current riders array
+    const newRiders = [...this.riders];
+    // Remove the last rider from the copied array
+    newRiders.pop();
+    // Dispatch the updated array of riders
+    this.store.dispatch(Actions.setRiders(newRiders));
+    this.riders = [];
+    this.changed = true;
+  }
+
+
   commit() {
     if (!this.changed) return false;
     this.store.dispatch(Actions.commitTrackChanges());
@@ -88,32 +123,6 @@ class RiderMod {
     }
 
     if (!this.state.active) return;
-
-    /* Apply Changes */
-
-    const lastLine = this.lines[this.lines.length - 1]
-
-    if (selectedLines.size == 1) {
-      const selectedLine = Array.from(selectedLines)[0]
-      const newRiders = [
-        ...this.riders,
-        {
-          "startPosition": {
-            "x": selectedLine.p2.x ?? 0,
-            "y": selectedLine.p2.y ?? 0
-          },
-          "startVelocity": {
-            "x": 0.4,
-            "y": 0
-          },
-          "remountable": 1
-        }
-      ]
-      this.store.dispatch(Actions.setRiders(newRiders))
-      this.riders = []
-      this.changed = true;
-    }
-
   }
 }
 
@@ -159,11 +168,31 @@ function main() {
         this.setState({ active: false });
       }
     }
+    onRemove() {
+      this.mod.add()
+    }
+    onAdd() {
+      this.mod.remove()
+    }
 
     render() {
       return create("div", null,
         this.state.active && create("div", null,
           /* Mod UI */
+          create("button",
+            {
+              style: { float: "left" },
+              onClick: this.onAdd.bind(this)
+            },
+            "Add Rider"
+          ),
+          create("button",
+            {
+              style: { float: "left" },
+              onClick: this.onRemove.bind(this)
+            },
+            "Remove Rider"
+          ),
           create("button",
             {
               style: { float: "left" },
@@ -181,7 +210,9 @@ function main() {
         )
       );
     }
+
   }
+
 
   window.registerCustomSetting(RiderModComponent);
 }

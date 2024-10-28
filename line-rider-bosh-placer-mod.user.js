@@ -1,10 +1,10 @@
 // ==UserScript==
 
-// @name         _
+// @name         Bosh spawner
 // @namespace    https://www.linerider.com/
-// @author       _
+// @author       Anton
 // @description  Bosh placer mod
-// @version      1.0.0
+// @version      1.0.1
 // @icon         https://www.linerider.com/favicon.ico
 
 // @match        https://www.linerider.com/*
@@ -38,10 +38,11 @@ class RiderMod {
   constructor(store, initState) {
     this.store = store;
     this.state = initState;
-    this.name = "Rider Mod"
     this.riders = []
     this.lines = []
     this.lastLine = { p1: { x: 0, y: 0 }, p2: { x: 0, y: 0 } }
+    this.x_velocity = this.state.x_velocity
+    this.y_velocity = this.state.y_velocity
     /* Substate Variables */
 
     this.changed = false;
@@ -62,12 +63,13 @@ class RiderMod {
             "y": lastLine.p2.y ?? 0
           },
           "startVelocity": {
-            "x": 0.4,
-            "y": 0
+            "x": this.x_velocity,
+            "y": this.y_velocity
           },
           "remountable": 1
         }
       ]
+
       this.store.dispatch(Actions.setRiders(newRiders))
       this.riders = []
       this.changed = true;
@@ -75,6 +77,7 @@ class RiderMod {
   }
 
   remove() {
+    if (this.changed) return false;
     // Create a copy of the current riders array
     const newRiders = [...this.riders];
     // Remove the last rider from the copied array
@@ -106,6 +109,8 @@ class RiderMod {
       /* Check State Changes */
       const riders = this.store.getState().simulator.engine.engine.state.riders
       const lines = this.store.getState().simulator.engine.engine.state.lines.buffer
+      this.x_velocity = this.state.x_velocity
+      this.y_velocity = this.state.y_velocity
       if (this.riders != riders) {
         this.riders = riders
       }
@@ -138,7 +143,9 @@ function main() {
       super(props);
 
       this.state = {
-        active: false
+        active: false,
+        x_velocity: 0.4,
+        y_velocity: 0
         /* State Props */
       };
 
@@ -169,16 +176,38 @@ function main() {
       }
     }
     onRemove() {
-      this.mod.add()
+      this.mod.remove()
     }
     onAdd() {
-      this.mod.remove()
+      this.mod.add()
+    }
+
+  renderSlider (key, props) {
+      props = {
+        ...props,
+        value: this.state[key],
+        onChange: e => {
+  const value = parseFloat(e.target.value) || 0;
+  this.setState({ [key]: value });
+  this.handleAdditionalLogic(value); // Call additional logic function if needed
+}
+      }
+      return create('div', null,
+        key,
+        create('input', { style: { width: '3em' }, type: 'number', ...props }),
+        create('input', { type: 'range', ...props, onFocus: e => e.target.blur() })
+      )
     }
 
     render() {
       return create("div", null,
         this.state.active && create("div", null,
           /* Mod UI */
+          create("div", null,
+
+          this.renderSlider("x_velocity", { min: -40, max: 40, step: 1}),
+          this.renderSlider("y_velocity", { min: -40, max: 40, step: 1})
+          ),
           create("button",
             {
               style: { float: "left" },
@@ -206,11 +235,10 @@ function main() {
             style: { backgroundColor: this.state.active ? "lightblue" : null },
             onClick: this.onActivate.bind(this)
           },
-          this.mod.name
+          "Bosh spawner"
         )
       );
     }
-
   }
 
 

@@ -1,6 +1,6 @@
 // ==UserScript==
 
-// @name         Bosh spawn
+// @name         Synchronized Riders Mod
 // @namespace    https://www.linerider.com/
 // @author       Anton
 // @description  Bosh placer mod
@@ -33,13 +33,8 @@ const revertTrackChanges = () => ({
 });
 
 const setRiders = (new_riders) => ({ type: "SET_RIDERS", payload: new_riders })
-
 const getSimulatorCommittedTrack = state => state.simulator.committedEngine;
-
 const getSimulatorCommittedRiders = state => getSimulatorCommittedTrack(state).engine.state.riders
-
-
-
 
 
 
@@ -138,8 +133,8 @@ class RiderMod {
         for (let i = 0; i < this.state.rider_count; i++) {
             new_riders.push({
                 "startPosition": {
-                    "x": this.state.x + (i * this.state.x_offset),
-                    "y": this.state.y + (i * this.state.y_offset)
+                    "x": this.state.x + (i* this.state.x_offset),
+                    "y": this.state.y + (i*this.state.y_offset)
                 },
                 "startVelocity": {
                     "x": this.state.x_velocity,
@@ -147,10 +142,8 @@ class RiderMod {
                 },
                 "remountable": 1,
                 "createdUsingMod": true
-
             })
         }
-
         this.store.dispatch(setRiders([...committed_riders, ...new_riders]))
         this.changed = true
     }
@@ -176,12 +169,12 @@ function main() {
                 rider_count: 1,
                 x_offset: 10,
                 y_offset: 0
+                /* State Props */
             };
 
             this.mod = new RiderMod(store, this.state);
 
             store.subscribe(() => {
-
             });
         }
 
@@ -253,6 +246,7 @@ function main() {
                         this.renderSlider("x_velocity", "x velocity", { min: -40, max: 40, step: 1 }),
                         this.renderSlider("y_velocity", "y velocity", { min: -40, max: 40, step: 1 })
                     ),
+
                     create("button",
                         {
                             style: { float: "left" },
@@ -278,6 +272,8 @@ function main() {
             );
         }
     }
+
+
     window.registerCustomSetting(RiderModComponent);
 }
 

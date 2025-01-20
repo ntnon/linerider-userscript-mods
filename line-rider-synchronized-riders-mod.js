@@ -22,7 +22,6 @@
 
 // ==/UserScript==
 
-/* global Actions, Selectors */
 
 const commitTrackChanges = () => ({
     type: "COMMIT_TRACK_CHANGES"
@@ -44,7 +43,6 @@ class RiderMod {
         this.state = initState;
 
         this.track = getSimulatorCommittedTrack(store.getState());
-        /* Substate Variables */
 
         this.changed = false;
 
@@ -56,11 +54,8 @@ class RiderMod {
     //update /fix
     remove() {
         if (this.changed) return false;
-        // Create a copy of the current riders array
         const newRiders = getSimulatorCommittedRiders(this.store.getState()).pop()
-        // Remove the last rider from the copied array
 
-        // Dispatch the updated array of riders
         this.store.dispatch(setRiders(newRiders));
         this.riders = [];
         this.changed = true;
@@ -76,10 +71,8 @@ class RiderMod {
     }
 
     onUpdate(nextState = this.state) {
-        // Helper variable to check if the mod should update
         let shouldUpdate = false;
 
-        // Sets the line preview mode to fast select
         if (!this.state.active && nextState.active) {
             window.previewLinesInFastSelect = true;
         }
@@ -87,13 +80,11 @@ class RiderMod {
             window.previewLinesInFastSelect = false;
         }
 
-        // Checks whether the mod state itself has changed
         if (this.state !== nextState) {
             this.state = nextState;
             shouldUpdate = true;
         }
 
-        // Checks that the engine has changed, only if the mod is active
         if (this.state.active) {
             const track = getSimulatorCommittedTrack(this.store.getState());
 
@@ -103,17 +94,14 @@ class RiderMod {
             }
         }
 
-        // Don't need to do anything if there aren't updates
         if (!shouldUpdate) return;
 
-        // If changes have been made previously, discard them for the new changes incoming
         if (this.changed) {
             this.store.dispatch(revertTrackChanges());
             this.changed = false;
         }
 
-        // If the mod isn't active, then no new changes are incoming and the previous changes have
-        // already been discard, so the function is done
+
         if (!this.state.active) return;
         if (!shouldUpdate) return;
 
@@ -130,11 +118,12 @@ class RiderMod {
 
         const new_riders = []
 
-        for (let i = 0; i < this.state.rider_count; i++) {
+        for (let iy = 0; iy < this.state.rider_count_y; iy++) {
+           for (let ix = 0; ix < this.state.rider_count_x; ix++) {
             new_riders.push({
                 "startPosition": {
-                    "x": this.state.x + (i* this.state.x_offset),
-                    "y": this.state.y + (i*this.state.y_offset)
+                    "x": this.state.x + (ix* this.state.x_offset),
+                    "y": this.state.y + (iy*this.state.y_offset)
                 },
                 "startVelocity": {
                     "x": this.state.x_velocity,
@@ -144,6 +133,9 @@ class RiderMod {
                 "createdUsingMod": true
             })
         }
+
+        }
+
         this.store.dispatch(setRiders([...committed_riders, ...new_riders]))
         this.changed = true
     }
@@ -166,10 +158,10 @@ function main() {
                 y: 0,
                 x_velocity: 0.4,
                 y_velocity: 0,
-                rider_count: 1,
+                rider_count_x: 1,
+                rider_count_y: 1,
                 x_offset: 10,
-                y_offset: 0
-                /* State Props */
+                y_offset: 10
             };
 
             this.mod = new RiderMod(store, this.state);
@@ -234,10 +226,11 @@ function main() {
         render() {
             return create("div", null,
                 this.state.active && create("div", null,
-                    /* Mod UI */
                     create("div", null,
-                        this.renderNumber("rider_count", "amount", { min: -40, max: 40, step: 1 }),
-                        this.state.rider_count > 1 && create("div", null,
+                        this.renderNumber("rider_count_x", "amount", { min: 0, max: 20, step: 1 }),
+                        this.renderNumber("rider_count_y", "amount", { min: 0, max: 20, step: 1 }),
+
+                        create("div", null,
                             this.renderSlider("x_offset", "x offset", { min: -40, max: 40, step: 1 }),
                             this.renderSlider("y_offset", "y offset", { min: -40, max: 40, step: 1 })
                         ),
@@ -286,5 +279,3 @@ if (window.registerCustomSetting) {
         main();
     };
 }
-
-/* Utility Functions */

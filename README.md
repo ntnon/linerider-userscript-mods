@@ -14,3 +14,6 @@ Here's a video explaining how to install mods: https://streamable.com/v4wzx
 
 ### Bosh Manager Bosh
 [Showcase](https://youtu.be/TgikD-5-4Os)
+
+### Selection Metadata Extended
+Expands upon previous iterations of the Metadata mod, by adding fields for editing the position of selected lines and changing line width by means of multipliers

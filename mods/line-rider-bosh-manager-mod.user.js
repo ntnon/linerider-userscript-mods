@@ -178,6 +178,7 @@ class BoshAdderMod {
                         "y": this.state.y_velocity
                     },
                     "remountable": 1,
+                    "startAngle": this.state.startAngle,
                 }
                 if (this.state.key) {
                     newRider["key"] = this.state.key
@@ -285,6 +286,7 @@ function main() {
                 multipleRiders: false,
                 maxRiders: 10,
                 riderCount: 0,
+                startAngle: 0,
                 x: 0,
                 y: 0,
                 x_init: 0,
@@ -404,6 +406,7 @@ function main() {
                     this.renderCheckbox("useLastLine", "use last line ", {}),
                     this.renderCheckbox("multipleRiders", " multiple riders ", {}),
                     this.renderNumber("maxRiders", "max riders", { min: 1, step: 1 }),
+                    this.renderNumber("startAngle", "startAngle", { min: 0, max: 360, step: 1 }),
                     create("table", { style: { width: "100%" } },
                         create("tr", { id: "table" },
                             create("th", null, "variable"),

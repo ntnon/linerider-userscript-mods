@@ -580,6 +580,41 @@ function main() {
             );
         }
 
+        renderBoshStartAngle(index, props) {
+            const rider = this.state.riders[index];
+
+            const value = rider && rider.startAngle !== undefined
+                ? rider.startAngle
+                : 0;
+
+            props = {
+                ...props,
+                value,
+                onChange: (e) => {
+                    const value = parseFloat(e.target.value);
+
+                    this.setState(prevState => {
+                        const updatedRiders = [...prevState.riders];
+                        updatedRiders[index] = {
+                            ...updatedRiders[index],
+                            startAngle: value
+                        };
+                        return { riders: updatedRiders };
+                    });
+                }
+            };
+
+            return create("div", { style: {} },
+                create("input", {
+                    style: {
+                        width: "4em"
+                    },
+                    type: "number",
+                    ...props
+                }),
+            );
+        }
+
         renderBoshNumber(key1, key2, index, props) {
             const rider = this.state.riders[index];
 
@@ -635,8 +670,11 @@ function main() {
                 create("td", null,
                     this.renderBoshNumber("startVelocity", "y", index, { step: 0.1 }),
                 ),
-                this.state.showRemount && create("td", null,
+                create("td", null,
+                    this.renderBoshStartAngle("startAngle", index, {})),
+                this.state.showRemount && create("td", { style: { display: "flex" } },
                     this.renderBoshCheckbox("remountable", index, {})),
+
                 create("button", { onClick: () => this.onRemove(index).bind(this) }, "remove")
             )
         }
@@ -670,7 +708,8 @@ function main() {
                                 create("th", null, "y"),
                                 create("th", null, "vx"),
                                 create("th", null, "vy"),
-                                this.state.showRemount && create("th", null, "remount")
+                                this.state.showRemount && create("th", null, "remount"),
+                                create("th", null, "startAngle")
                             )
                         ),
                         create("tbody", null,  // Wrap rows in <tbody>

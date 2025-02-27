@@ -278,7 +278,6 @@ function main() {
                 if (this.state.active && !selectToolActive) {
                     this.setState({ active: false })
                 }
-
             })
         }
 
@@ -420,7 +419,7 @@ function main() {
                         },
                         onClick: this.onActivate.bind(this)
                     },
-                    'Metadata Mod Ruler'
+                    'Metadata Mod'
                 )
             )
         }

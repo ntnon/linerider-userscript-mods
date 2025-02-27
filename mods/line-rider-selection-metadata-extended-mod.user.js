@@ -387,7 +387,6 @@ function main() {
             let tools = []
             if (this.state.active) {
                 tools = [
-
                     this.renderCheckbox('useWidthMult'),
                     this.renderCheckbox('flipped'),
                     this.renderCheckbox('negativeMultiplier'),

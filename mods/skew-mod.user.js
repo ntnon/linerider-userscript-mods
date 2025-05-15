@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         Line Rider Skew Mod
 // @namespace    http://tampermonkey.net/
-// @version      0.4
+// @version      0.1
 // @description  Adds ability to rotate and scale selections
 // @author       Anton Nydal
 // @match        https://www.linerider.com/*
 // @match        https://*.official-linerider.com/*
 // @match        http://localhost:8000/*
 // @match        https://www-staging.official-linerider.com/*
-// @downloadURL
+// @downloadURL  https://github.com/ntnon/linerider-userscript-mods/blob/main/mods/skew-mod.user.js
 // @grant        none
 // ==/UserScript==
 

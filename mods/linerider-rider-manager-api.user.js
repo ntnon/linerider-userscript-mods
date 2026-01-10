@@ -1,4 +1,4 @@
-// // ==UserScript==
+// ==UserScript==
 
 // @name         RiderManager API
 // @namespace    https://www.linerider.com/

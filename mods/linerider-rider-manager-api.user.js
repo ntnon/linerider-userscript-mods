@@ -272,7 +272,7 @@
           - getAllPoints()
           - getPointsByGroup(...groupNames)
           - getPointsNotInGroup(...groupNames)
-`);
+          `);
     }
 
     /**
@@ -306,8 +306,6 @@
 
   // Expose RiderManager object
   window.RiderManager = RiderManager;
-  window.RM = RiderManager;
-
   // Expose all functions globally
   window.getAllRiders = RiderManager.getAllRiders;
   window.getRidersByGroup = RiderManager.getRidersByGroup;

@@ -1,6 +1,6 @@
 // ==UserScript==
 
-// @name         RiderManager API
+// @name         Multirider API
 // @namespace    https://www.linerider.com/
 // @author       Anton Nydal
 // @description  API for advanced rider management system for Line Rider

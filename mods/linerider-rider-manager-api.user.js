@@ -48,10 +48,7 @@
   const notScarfPoints = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
   const allPoints = [...Array(17).keys()]; // All contact points (0-16)
 
-  const RiderManager = (() => {
-    // CRITICAL: Each rider MUST have exactly 17 contact points in sequence.
-    // Rider identification depends on finding contact points in continuous
-    // blocks of 17 points per rider (rider index = contactPoint ÷ 17).
+  const RiderManagerAPI = (() => {
     function getRiders() {
       return Selectors.getRiders();
     }
@@ -496,6 +493,7 @@ Type RiderManager.help() anytime to see this complete guide!
     unsafeWindow.allPoints = allPoints;
 
     // window.help = help;
+    window.RiderManagerAPI = RiderManagerAPI;
     window.makeRider = makeRider;
     window.repeatRider = repeatRider;
     window.getRiders = getRiders;

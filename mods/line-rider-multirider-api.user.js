@@ -320,6 +320,6 @@
   window.clearRiders = RiderManager.clearRiders;
 
   console.log(
-    "🚴 RiderManager loaded! All functions available globally. Type RiderManager.help() for API guide.",
+    "🚴 Multirider API loaded! All functions available globally. Type RiderManager.help() for API guide.",
   );
 })();

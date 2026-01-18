@@ -19,13 +19,13 @@
 // @grant        none
 
 // ==/UserScript==
+(function () {
+  "use strict";
 
-(() => {
-  class GravityAPI {
-    // Define constants as  properties
-    DEFAULT_GRAVITY = { x: 0, y: 0.175 };
-    FRAMES_PER_SECOND = 40;
-    ContactPoints = {
+  const GravityAPI = (() => {
+    const DEFAULT_GRAVITY = { x: 0, y: 0.175 };
+    const FRAMES_PER_SECOND = 40;
+    const ContactPoints = {
       PEG: 0,
       TAIL: 1,
       NOSE: 2,
@@ -45,76 +45,62 @@
       SCARF_6: 16,
     };
 
-    PointGroups = {
+    const DefaultShape = {
+      [ContactPoints.PEG]: { x: 0, y: 0 },
+      [ContactPoints.TAIL]: { x: 0, y: 5 },
+      [ContactPoints.NOSE]: { x: 15, y: 5 },
+      [ContactPoints.STRING]: { x: 17.5, y: 0 },
+      [ContactPoints.BUTT]: { x: 5, y: 0 },
+      [ContactPoints.SHOULDER]: { x: 5, y: -5.5 },
+      [ContactPoints.RHAND]: { x: 11.5, y: -5 },
+      [ContactPoints.LHAND]: { x: 11.5, y: -5 },
+      [ContactPoints.LFOOT]: { x: 10, y: 5 },
+      [ContactPoints.RFOOT]: { x: 10, y: 5 },
+      [ContactPoints.SCARF_0]: { x: 3, y: -5.5 },
+      [ContactPoints.SCARF_1]: { x: 1, y: -5.5 },
+      [ContactPoints.SCARF_2]: { x: -1, y: -5.5 },
+      [ContactPoints.SCARF_3]: { x: -3, y: -5.5 },
+      [ContactPoints.SCARF_4]: { x: -5, y: -5.5 },
+      [ContactPoints.SCARF_5]: { x: -7, y: -5.5 },
+      [ContactPoints.SCARF_6]: { x: -9, y: -5.5 },
+    };
+
+    const KramualShape = {
+      [ContactPoints.PEG]: { x: 0, y: 0 },
+      [ContactPoints.TAIL]: { x: -0.48, y: 0 },
+      [ContactPoints.NOSE]: { x: 16.9, y: 0 },
+      [ContactPoints.STRING]: { x: 20.7, y: 0 },
+      [ContactPoints.BUTT]: { x: 4.85, y: 0 },
+      [ContactPoints.SHOULDER]: { x: 6.42, y: 0 },
+      [ContactPoints.RHAND]: { x: 13.11, y: 0 },
+      [ContactPoints.LHAND]: { x: 12.61, y: 0 },
+      [ContactPoints.LFOOT]: { x: 12.57, y: 0 },
+      [ContactPoints.RFOOT]: { x: 12.24, y: 0 },
+      [ContactPoints.SCARF_0]: { x: 8.42, y: 0.02 },
+      [ContactPoints.SCARF_1]: { x: 10.42, y: -0.02 },
+      [ContactPoints.SCARF_2]: { x: 12.42, y: 0.01 },
+      [ContactPoints.SCARF_3]: { x: 14.42, y: 0.06 },
+      [ContactPoints.SCARF_4]: { x: 16.42, y: 0.05 },
+      [ContactPoints.SCARF_5]: { x: 18.42, y: 0 },
+      [ContactPoints.SCARF_6]: { x: 20.42, y: -0.01 },
+    };
+
+    const PointGroups = {
       ALL: [...Array(17).keys()], // All contact points (0-16)
       SLED: [0, 1, 2, 3],
       RIDER: [4, 5, 6, 7, 8, 9], // Body parts only
       SCARF: [10, 11, 12, 13, 14, 15, 16],
     };
 
-    DefaultShape = {
-      // Sled points
-      [this.ContactPoints.PEG]: { x: 0, y: 0 },
-      [this.ContactPoints.TAIL]: { x: 0, y: 5 },
-      [this.ContactPoints.NOSE]: { x: 15, y: 5 },
-      [this.ContactPoints.STRING]: { x: 17.5, y: 0 },
-
-      // Rider points
-      [this.ContactPoints.BUTT]: { x: 5, y: 0 },
-      [this.ContactPoints.SHOULDER]: { x: 5, y: -5.5 },
-      [this.ContactPoints.RHAND]: { x: 11.5, y: -5 },
-      [this.ContactPoints.LHAND]: { x: 11.5, y: -5 },
-      [this.ContactPoints.LFOOT]: { x: 10, y: 5 },
-      [this.ContactPoints.RFOOT]: { x: 10, y: 5 },
-
-      // Scarf points
-      [this.ContactPoints.SCARF_0]: { x: 3, y: -5.5 },
-      [this.ContactPoints.SCARF_1]: { x: 1, y: -5.5 },
-      [this.ContactPoints.SCARF_2]: { x: -1, y: -5.5 },
-      [this.ContactPoints.SCARF_3]: { x: -3, y: -5.5 },
-      [this.ContactPoints.SCARF_4]: { x: -5, y: -5.5 },
-      [this.ContactPoints.SCARF_5]: { x: -7, y: -5.5 },
-      [this.ContactPoints.SCARF_6]: { x: -9, y: -5.5 },
-    };
-
-    Kramual = {
-      // Sled points
-      [this.ContactPoints.PEG]: { x: 0, y: 0 },
-      [this.ContactPoints.TAIL]: { x: -0.48, y: 0 },
-      [this.ContactPoints.NOSE]: { x: 16.9, y: 0 },
-      [this.ContactPoints.STRING]: { x: 20.7, y: 0 },
-
-      // Rider points
-      [this.ContactPoints.BUTT]: { x: 4.85, y: 0 },
-      [this.ContactPoints.SHOULDER]: { x: 6.42, y: 0 },
-      [this.ContactPoints.RHAND]: { x: 13.11, y: 0 },
-      [this.ContactPoints.LHAND]: { x: 12.61, y: 0 },
-      [this.ContactPoints.LFOOT]: { x: 12.57, y: 0 },
-      [this.ContactPoints.RFOOT]: { x: 12.24, y: 0 },
-
-      // Scarf points
-      [this.ContactPoints.SCARF_0]: { x: 8.42, y: 0.02 },
-      [this.ContactPoints.SCARF_1]: { x: 10.42, y: -0.02 },
-      [this.ContactPoints.SCARF_2]: { x: 12.42, y: 0.01 },
-      [this.ContactPoints.SCARF_3]: { x: 14.42, y: 0.06 },
-      [this.ContactPoints.SCARF_4]: { x: 16.42, y: 0.05 },
-      [this.ContactPoints.SCARF_5]: { x: 18.42, y: 0 },
-      [this.ContactPoints.SCARF_6]: { x: 20.42, y: -0.01 },
-    };
-
-    timestampToFrames([minutes, seconds, remainingFrames]) {
+    function timestampToFrames([minutes, seconds, remainingFrames]) {
       return (
-        minutes * GravityAPI.FRAMES_PER_SECOND * 60 +
-        seconds * GravityAPI.FRAMES_PER_SECOND +
+        minutes * FRAMES_PER_SECOND * 60 +
+        seconds * FRAMES_PER_SECOND +
         remainingFrames
       );
     }
 
-    /**
-     * Helper function to calculate target position for a contact point
-     */
-    // JavaScript
-    calculateTargetPosition({
+    function calculateTargetPosition({
       contactPoint,
       anchorPoint = null,
       targetPosition,
@@ -181,11 +167,11 @@
       };
     }
 
-    resolveShape(shape, riderData, anchor) {
+    function resolveShape(shape, riderData, anchor) {
       return shape || buildCurrentShape(riderData, anchor);
     }
 
-    rotateOffset(offset, angleDegrees) {
+    function rotateOffset(offset, angleDegrees) {
       const angleRadians = angleDegrees * (Math.PI / 180);
       const cos = Math.cos(angleRadians);
       const sin = Math.sin(angleRadians);
@@ -196,8 +182,7 @@
       };
     }
 
-    // Helper to build current shape from riderData
-    buildCurrentShape(riderData, anchor) {
+    function buildCurrentShape(riderData, anchor) {
       const anchorPos = riderData.points[anchor].pos;
       const shape = {};
       for (const cp in riderData.points) {
@@ -207,7 +192,7 @@
       return shape;
     }
 
-    applyGravity(
+    function applyGravity(
       baseTimestamp,
       contactPoints,
       keyframeFn,
@@ -224,7 +209,7 @@
           "baseTimestamp must be an array [minutes, seconds, frames]",
         );
 
-      const timeAsFrames = this.timestampToFrames(baseTimestamp);
+      const timeAsFrames = timestampToFrames(baseTimestamp);
       const groupSize = 17;
       const numGroups = Math.ceil(contactPoints.length / groupSize);
 
@@ -259,18 +244,18 @@
       }).flat();
     }
 
-    setGravity =
+    const setGravity =
       ({ x, y }) =>
       (t, cp = all) => [[t, cp, (_keyframeContext) => ({ x, y })]];
 
-    pulseGravity =
+    const pulseGravity =
       ({ x, y, duration = 0, normalGravity }) =>
       (t, cp = all) => [
         [t, cp, (_keyframeContext) => ({ x, y }), true],
         [t + duration + 1, cp, (_keyframeContext) => normalGravity, true],
       ];
 
-    teleport =
+    const teleport =
       ({ dx, dy, normalGravity = { x: 0, y: 0.175 } }) =>
       (t, cp = all) => [
         [
@@ -286,7 +271,7 @@
         [t + 2, cp, (_ctx) => normalGravity, true],
       ];
 
-    transformRider =
+    const transformRider =
       ({
         anchorPoint = null,
         position = null,
@@ -332,7 +317,7 @@
         ];
       };
 
-    lockToAxisKeyframes(
+    function lockToAxisFn(
       { x = null, y = null },
       maxForce,
       duration,
@@ -360,7 +345,6 @@
           true,
         ]);
       }
-      // Optionally revert at the end
       keyframes.push([
         startFrame + duration,
         contactPoints,
@@ -370,12 +354,12 @@
       return keyframes;
     }
 
-    lockToAxis =
+    const lockToAxis =
       ({ x = null, y = null }, maxForce, duration) =>
       (t, cp) =>
-        lockToAxisKeyframes({ x, y }, maxForce, duration, t, cp);
+        lockToAxisFn({ x, y }, maxForce, duration, t, cp);
 
-    Intervals = {
+    const Intervals = {
       simultaneous: () => 0,
       stagger: (frames) => (i) => i * frames,
       exponential:
@@ -385,8 +369,7 @@
       sine: (period, amplitude) => (i) => Math.sin(i * period) * amplitude,
     };
 
-    // JavaScript
-    getGravityForContactPoint({
+    function getGravityForContactPoint({
       keyframes,
       frameIndex,
       globalCpIndex,
@@ -422,7 +405,7 @@
       return found ? lastGravity : DEFAULT_GRAVITY;
     }
 
-    setGravityKeyframes(gravity) {
+    function setGravityKeyframes(gravity) {
       // Clear Cache
       window.store.getState().camera.playbackFollower._frames.length = 0;
       window.store.getState().simulator.engine.engine._computed._frames.length = 1;
@@ -436,7 +419,7 @@
       this.triggerSubscriberHack();
     }
 
-    triggerSubscriberHack() {
+    function triggerSubscriberHack() {
       Object.defineProperty(window.$ENGINE_PARAMS, "gravity", {
         get() {
           const frameIndex =
@@ -500,18 +483,40 @@
         },
       });
     }
-  }
+
+    const KeyframeFns = {
+      pulseGravity,
+      lockToAxis,
+      transformRider,
+      teleport,
+    };
+
+    const Shapes = {
+      DefaultShape,
+      KramualShape,
+    };
+
+    return {
+      applyGravity,
+      setGravityKeyframes,
+      triggerSubscriberHack,
+      KeyframeFns,
+      Intervals,
+      Shapes,
+
+      // Gravity functions
+      lockToAxis,
+      transformRider,
+      teleport,
+      pulseGravity,
+      setGravity,
+    };
+  })();
+
   window.GravityAPI = GravityAPI;
+
   window.applyGravity = GravityAPI.applyGravity;
-  window.setGravity = GravityAPI.setGravity;
-  window.setGravityKeyframes = GravityAPI.setGravityKeyframes;
-  window.applyGravity = GravityAPI.applyGravity;
-  window.lockToAxis = GravityAPI.lockToAxis;
-  window.pulseGravity = GravityAPI.pulseGravity;
-  window.setGravity = GravityAPI.setGravity;
-  window.transformRider = GravityAPI.transformRider;
-  window.teleport = GravityAPI.teleport;
-  window.timestampToFrames = GravityAPI.timestampToFrames;
 
   console.log("🚴 Gravity API loaded! All functions available globally");
+  console.log(GravityAPI);
 })();

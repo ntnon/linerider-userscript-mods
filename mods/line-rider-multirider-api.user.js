@@ -192,7 +192,19 @@
       });
 
       contactPoints.keepOnly = function (points) {
+        console.log("points: ", points);
+        if (!Array.isArray(points)) {
+          throw new Error("Expected an array for 'points'");
+        }
         return this.filter((point) => points.includes(point % 17));
+      };
+
+      contactPoints.exclude = function (points) {
+        console.log("points: ", points);
+        if (!Array.isArray(points)) {
+          throw new Error("Expected an array for 'points'");
+        }
+        return this.filter((point) => !points.includes(point % 17));
       };
 
       return contactPoints;

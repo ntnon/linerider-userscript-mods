@@ -405,7 +405,23 @@
       return found ? lastGravity : DEFAULT_GRAVITY;
     }
 
-    function setGravityKeyframes(gravity) {
+    function setGravityKeyframes(items) {
+      // Process items - accept array format [timestamp, contactPoints, keyframeFn, intervalFn?]
+      const processedKeyframes = items.map((item) => {
+        // If it's an array [timestamp, contactPoints, keyframeFn, intervalFn?]
+        if (Array.isArray(item) && Array.isArray(item[0])) {
+          return applyGravity(
+            item[0], // timestamp
+            item[1], // contactPoints
+            item[2], // keyframeFn
+            item[3] || Intervals.simultaneous, // intervalFn (optional)
+          );
+        }
+
+        // Fallback: assume it's already processed keyframes
+        return item;
+      });
+
       // Clear Cache
       window.store.getState().camera.playbackFollower._frames.length = 0;
       window.store.getState().simulator.engine.engine._computed._frames.length = 1;
@@ -414,7 +430,9 @@
       requestAnimationFrame(() =>
         store.dispatch({ type: "SET_PLAYER_INDEX", payload: currentIndex }),
       );
-      window.allGravityKeyframes = gravity.flat().sort((a, b) => a[0] - b[0]);
+      window.allGravityKeyframes = processedKeyframes
+        .flat()
+        .sort((a, b) => a[0] - b[0]);
 
       this.triggerSubscriberHack();
     }

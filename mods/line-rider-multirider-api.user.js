@@ -41,11 +41,96 @@
     SCARF_5: 15,
     SCARF_6: 16,
   };
-  const sledPoints = [0, 1, 2, 3];
-  const scarfPoints = [10, 11, 12, 13, 14, 15, 16];
-  const riderPoints = [4, 5, 6, 7, 8, 9]; // Body parts only
-  const notScarfPoints = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
-  const allPoints = [...Array(17).keys()]; // All contact points (0-16)
+
+  // Predefined contact point groups
+  const PointGroups = {
+    all: [...Array(17).keys()], // All contact points (0-16)
+    sled: [0, 1, 2, 3],
+    body: [4, 5, 6, 7, 8, 9], // Body parts only
+    scarf: [10, 11, 12, 13, 14, 15, 16],
+    notScarf: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+
+    // Individual contact points as arrays for convenience
+    peg: [0],
+    tail: [1],
+    nose: [2],
+    string: [3],
+    butt: [4],
+    shoulder: [5],
+    rhand: [6],
+    lhand: [7],
+    lfoot: [8],
+    rfoot: [9],
+    hands: [6, 7],
+    feet: [8, 9],
+  };
+
+  // Legacy aliases for backward compatibility
+  const sledPoints = PointGroups.sled;
+  const scarfPoints = PointGroups.scarf;
+  const riderPoints = PointGroups.body;
+  const notScarfPoints = PointGroups.notScarf;
+  const allPoints = PointGroups.all;
+
+  /**
+   * RiderSelection class - wraps rider indices and provides methods to convert to contact points
+   */
+  class RiderSelection {
+    constructor(riderIndices) {
+      this.riderIndices = Array.isArray(riderIndices)
+        ? riderIndices
+        : [riderIndices];
+      this._isRiderSelection = true; // Marker for GravityAPI to detect
+    }
+
+    /**
+     * Converts rider indices to contact point indices
+     * @param {Array} points - Optional array of contact point indices (0-16) to include. Defaults to all points.
+     * @returns {Array} Array of global contact point indices
+     */
+    toContactPoints(points = allPoints) {
+      const contactPoints = [];
+      this.riderIndices.forEach((riderIndex) => {
+        points.forEach((cpIndex) => {
+          contactPoints.push(riderIndex * 17 + cpIndex);
+        });
+      });
+      return contactPoints;
+    }
+
+    /**
+     * Keeps only specified contact points for each rider
+     * @param {Array} points - Contact point indices (0-16) to keep
+     * @returns {Array} Array of global contact point indices
+     */
+    only(points) {
+      if (!Array.isArray(points)) {
+        throw new Error("Expected an array for 'points'");
+      }
+      return this.toContactPoints(points);
+    }
+
+    /**
+     * Excludes specified contact points for each rider
+     * @param {Array} points - Contact point indices (0-16) to exclude
+     * @returns {Array} Array of global contact point indices
+     */
+    exclude(points) {
+      if (!Array.isArray(points)) {
+        throw new Error("Expected an array for 'points'");
+      }
+      const includedPoints = allPoints.filter((p) => !points.includes(p));
+      return this.toContactPoints(includedPoints);
+    }
+
+    /**
+     * Returns all contact points for the riders
+     * @returns {Array} Array of global contact point indices
+     */
+    all() {
+      return this.toContactPoints();
+    }
+  }
 
   const RiderManager = (() => {
     /**
@@ -164,94 +249,62 @@
     }
 
     /**
-     * Gets all contact points for all riders in the scene
-     * @returns {Array} Array of contact point indices with keepOnly() method
+     * Gets all rider indices in the scene
+     * @returns {RiderSelection} RiderSelection object with rider indices
      */
-    function getAllPoints() {
+    function getAllRiderIndices() {
       const riders = getRiders();
-      return createContactPointsArray(riders);
+      const indices = riders.map((_, index) => index);
+      return new RiderSelection(indices);
     }
 
     /**
-     * Helper function to create contact points array with keepOnly method attached
+     * Helper function to get rider indices from rider objects
      * @param {Array} riders - Array of rider objects
-     * @returns {Array} Array of contact point indices with keepOnly() method
+     * @returns {Array} Array of rider indices
      */
-    function createContactPointsArray(riders) {
+    function getRiderIndices(riders) {
       const allRiders = getRiders();
-      const groupSize = 17;
-      const contactPoints = [];
-
-      riders.forEach((rider) => {
-        const riderIndex = allRiders.indexOf(rider);
-        if (riderIndex !== -1) {
-          for (let j = 0; j < groupSize; j++) {
-            contactPoints.push(riderIndex * groupSize + j);
-          }
-        }
-      });
-
-      contactPoints.keepOnly = function (points) {
-        console.log("points: ", points);
-        if (!Array.isArray(points)) {
-          throw new Error("Expected an array for 'points'");
-        }
-        return this.filter((point) => points.includes(point % 17));
-      };
-
-      contactPoints.exclude = function (points) {
-        console.log("points: ", points);
-        if (!Array.isArray(points)) {
-          throw new Error("Expected an array for 'points'");
-        }
-        return this.filter((point) => !points.includes(point % 17));
-      };
-
-      return contactPoints;
+      return riders
+        .map((rider) => allRiders.indexOf(rider))
+        .filter((idx) => idx !== -1);
     }
 
     /**
-     * Gets rider objects that belong to any of the specified groups
+     * Gets rider indices that belong to any of the specified groups
      * @param {...string} groupNames - One or more group names
-     * @returns {Array} Array of rider objects
+     * @returns {RiderSelection} RiderSelection object with matching rider indices
      */
     function getRidersByGroup(...groupNames) {
-      return getRiders().filter((rider) => {
-        if (!(rider.groups instanceof Set)) return false;
-        return groupNames.some((groupName) => rider.groups.has(groupName));
+      const riders = getRiders();
+      const matchingIndices = [];
+      riders.forEach((rider, index) => {
+        if (!(rider.groups instanceof Set)) return;
+        if (groupNames.some((groupName) => rider.groups.has(groupName))) {
+          matchingIndices.push(index);
+        }
       });
+      return new RiderSelection(matchingIndices);
     }
 
     /**
-     * Gets rider objects that do NOT belong to any of the specified groups
+     * Gets rider indices that do NOT belong to any of the specified groups
      * @param {...string} groupNames - One or more group names
-     * @returns {Array} Array of rider objects
+     * @returns {RiderSelection} RiderSelection object with non-matching rider indices
      */
     function getRidersNotInGroup(...groupNames) {
-      return getRiders().filter((rider) => {
-        if (!(rider.groups instanceof Set)) return true;
-        return !groupNames.some((groupName) => rider.groups.has(groupName));
+      const riders = getRiders();
+      const matchingIndices = [];
+      riders.forEach((rider, index) => {
+        if (!(rider.groups instanceof Set)) {
+          matchingIndices.push(index);
+          return;
+        }
+        if (!groupNames.some((groupName) => rider.groups.has(groupName))) {
+          matchingIndices.push(index);
+        }
       });
-    }
-
-    /**
-     * Gets all contact points for riders in any of the specified groups
-     * @param {...string} groupNames - One or more group names
-     * @returns {Array} Array of contact point indices with keepOnly() method
-     */
-    function getPointsByGroup(...groupNames) {
-      const riders = getRidersByGroup(...groupNames);
-      return createContactPointsArray(riders);
-    }
-
-    /**
-     * Gets all contact points for riders NOT in any of the specified groups
-     * @param {...string} groupNames - One or more group names
-     * @returns {Array} Array of contact point indices with keepOnly() method
-     */
-    function getPointsNotInGroup(...groupNames) {
-      const riders = getRidersNotInGroup(...groupNames);
-      return createContactPointsArray(riders);
+      return new RiderSelection(matchingIndices);
     }
 
     /**
@@ -275,36 +328,35 @@
      */
     function help() {
       console.log(`
-        Riders:
-          - getAllRiders()
-          - getRidersByGroup(...groupNames)
-          - getRidersNotInGroup(...groupNames)
+        Riders (return RiderSelection objects):
+          - getAllRiders() - returns RiderSelection with all riders
+          - getRidersByGroup(...groupNames) - returns RiderSelection with matching riders
+          - getRidersNotInGroup(...groupNames) - returns RiderSelection with non-matching riders
 
-        Contact Points:
-          - getAllPoints()
-          - getPointsByGroup(...groupNames)
-          - getPointsNotInGroup(...groupNames)
+        RiderSelection methods:
+          - .all() - get all contact points
+          - .only([0,1,2]) or .only(sled) - get only specific contact points
+          - .exclude([10,11,12]) or .exclude(scarf) - exclude specific contact points
+          - .toContactPoints([0,1,2]) - convert to contact point array
+
+        Predefined Point Groups:
+          - all, sled, body, scarf, notScarf
+          - peg, tail, nose, string, butt, shoulder
+          - rhand, lhand, rfoot, lfoot, hands, feet
+
+        Examples:
+          getAllRiders().only(sled) // All riders, sled points only
+          getRidersByGroup('main').exclude(scarf) // Main group without scarf
+          getAllRiders().only(body) // All riders, body only
+          getRidersByGroup('hero').only(hands) // Hero group, hands only
           `);
     }
 
-    /**
-     * Gets all riders currently in the scene
-     * @returns {Array} Array of all rider objects
-     */
-    function getAllRiders() {
-      return getRiders();
-    }
-
     return {
-      // Rider Getters
-      getAllRiders,
+      // Rider Getters (return RiderSelection objects)
+      getAllRiders: getAllRiderIndices,
       getRidersByGroup,
       getRidersNotInGroup,
-
-      // Contact Point getters
-      getAllPoints,
-      getPointsByGroup,
-      getPointsNotInGroup,
 
       // Utility
       addRider,
@@ -313,23 +365,68 @@
       repeatRider,
       clearRiders,
       help,
+
+      // Classes
+      RiderSelection,
+
+      // Point Groups
+      PointGroups,
     };
   })();
 
   // Expose RiderManager object
   window.RiderManager = RiderManager;
+
+  // Expose PointGroups globally for easy access
+  window.PointGroups = RiderManager.PointGroups;
   // Expose all functions globally
   window.getAllRiders = RiderManager.getAllRiders;
   window.getRidersByGroup = RiderManager.getRidersByGroup;
   window.getRidersNotInGroup = RiderManager.getRidersNotInGroup;
-  window.getAllPoints = RiderManager.getAllPoints;
-  window.getPointsByGroup = RiderManager.getPointsByGroup;
-  window.getPointsNotInGroup = RiderManager.getPointsNotInGroup;
   window.addRider = RiderManager.addRider;
   window.baseRider = RiderManager.baseRider;
   window.makeRider = RiderManager.makeRider;
   window.repeatRider = RiderManager.repeatRider;
   window.clearRiders = RiderManager.clearRiders;
+  window.RiderSelection = RiderManager.RiderSelection;
+
+  // Expose individual point groups globally for convenience
+  const {
+    all,
+    sled,
+    body,
+    scarf,
+    notScarf,
+    peg,
+    tail,
+    nose,
+    string,
+    butt,
+    shoulder,
+    rhand,
+    lhand,
+    lfoot,
+    rfoot,
+    hands,
+    feet,
+  } = RiderManager.PointGroups;
+  window.all = all;
+  window.sled = sled;
+  window.body = body;
+  window.scarf = scarf;
+  window.notScarf = notScarf;
+  window.peg = peg;
+  window.tail = tail;
+  window.nose = nose;
+  window.string = string;
+  window.butt = butt;
+  window.shoulder = shoulder;
+  window.rhand = rhand;
+  window.lhand = lhand;
+  window.lfoot = lfoot;
+  window.rfoot = rfoot;
+  window.hands = hands;
+  window.feet = feet;
 
   console.log(
     "🚴 Multirider API loaded! All functions available globally. Type RiderManager.help() for API guide.",

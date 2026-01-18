@@ -406,13 +406,20 @@
     }
 
     function setGravityKeyframes(items) {
-      // Process items - accept array format [timestamp, contactPoints, keyframeFn, intervalFn?]
+      // Process items - accept array format [timestamp, contactPoints/RiderSelection, keyframeFn, intervalFn?]
       const processedKeyframes = items.map((item) => {
-        // If it's an array [timestamp, contactPoints, keyframeFn, intervalFn?]
+        // If it's an array [timestamp, contactPoints/RiderSelection, keyframeFn, intervalFn?]
         if (Array.isArray(item) && Array.isArray(item[0])) {
+          let contactPoints = item[1];
+
+          // Auto-detect and convert RiderSelection to contact points
+          if (contactPoints && contactPoints._isRiderSelection) {
+            contactPoints = contactPoints.toContactPoints();
+          }
+
           return applyGravity(
             item[0], // timestamp
-            item[1], // contactPoints
+            contactPoints, // contactPoints (converted if needed)
             item[2], // keyframeFn
             item[3] || Intervals.simultaneous, // intervalFn (optional)
           );

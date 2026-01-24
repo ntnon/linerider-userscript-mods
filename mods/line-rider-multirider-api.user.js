@@ -19,6 +19,29 @@
 // @grant        none
 
 // ==/UserScript==
+
+/*
+ * USAGE EXAMPLES:
+ *
+ * // Create a rider with a group
+ * const rider1 = makeRider('hero', 0, 0, 0.4, 0, 0, true);
+ * addRider(rider1);
+ *
+ * // Create multiple riders at different positions
+ * const base = makeRider('main', 0, 0);
+ * const riders = repeatRider(base, 5, 'clones', (pos, i) => ({ x: pos.x + i * 10, y: pos.y }));
+ * addRider(riders);
+ *
+ * // Select riders by group and get contact points
+ * const heroPoints = getRidersByGroup('hero').all();
+ * const mainSled = getRidersByGroup('main').only(sled);
+ * const allWithoutScarf = getAllRiders().exclude(scarf);
+ *
+ * // Use with Gravity API
+ * setGravityKeyframes([
+ *   [[0, 2, 0], getRidersByGroup('hero').only(body), setGravity(0, 0.5, 80)]
+ * ]);
+ */
 (function () {
   "use strict";
 
@@ -132,7 +155,7 @@
     }
   }
 
-  const RiderManager = (() => {
+  const MultiRiderAPI = (() => {
     /**
      * Gets all riders currently in the scene
      * @returns {Array} Array of rider objects
@@ -171,44 +194,68 @@
     /**
      * Creates a new rider with specified groups and properties
      * @param {string|Array|Set} groups - Group name(s) for the rider
-     * @param {Object} props - Rider properties (startPosition, startVelocity, startAngle, etc.)
+     * @param {number} startPosX - Starting X position (default: 0)
+     * @param {number} startPosY - Starting Y position (default: 0)
+     * @param {number} startVelX - Starting X velocity (default: 0)
+     * @param {number} startVelY - Starting Y velocity (default: 0)
+     * @param {number} startAngle - Starting angle in degrees (default: 0)
+     * @param {boolean} remountable - Whether rider can remount (default: true)
      * @returns {Object} Rider object with copy() method
      */
-    function makeRider(groups, props = {}) {
-      if (!groups)
-        throw new Error(
-          "Rider must have a group. Either 'group' or ['group1', 'group2']",
-        );
+    function makeRider(
+      groups,
+      startPosX = 0,
+      startPosY = 0,
+      startVelX = 0,
+      startVelY = 0,
+      startAngle = 0,
+      remountable = true,
+    ) {
+      if (!groups) groups = [];
       const groupSet =
         groups instanceof Set
           ? new Set(groups)
           : new Set(Array.isArray(groups) ? groups : [groups]);
       return {
         groups: groupSet,
-        startPosition: props.startPosition || { x: 0, y: 0 },
-        startVelocity: props.startVelocity || { x: 0, y: 0 },
-        startAngle: props.startAngle || 0,
+        startPosition: { x: startPosX, y: startPosY },
+        startVelocity: { x: startVelX, y: startVelY },
+        startAngle: startAngle,
+        remountable: remountable,
         copy() {
-          return makeRider(new Set(this.groups), {
-            startPosition: { ...this.startPosition },
-            startVelocity: { ...this.startVelocity },
-            startAngle: this.startAngle,
-            ...props,
-          });
+          return makeRider(
+            new Set(this.groups),
+            this.startPosition.x,
+            this.startPosition.y,
+            this.startVelocity.x,
+            this.startVelocity.y,
+            this.startAngle,
+            this.remountable,
+          );
         },
-        ...props,
       };
     }
 
     /**
      * Creates multiple copies of a rider with optional modifiers
+     * @param {string|Array|Set} groups - Group name(s) for the repeated riders
      * @param {Object} rider - Base rider to repeat
      * @param {number} count - Number of copies to create
-     * @param {string|Array|Set} groups - Group name(s) for the repeated riders
-     * @param {Object} modifiers - Optional modifiers for startPosition, startVelocity, startAngle, groups
+     * @param {Function|null} positionModifier - Function(pos, index) to modify startPosition (optional)
+     * @param {Function|null} velocityModifier - Function(vel, index) to modify startVelocity (optional)
+     * @param {Function|null} angleModifier - Function(angle, index) to modify startAngle (optional)
+     * @param {Function|null} groupModifier - Function(groups, index) to modify groups (optional)
      * @returns {Array} Array of rider objects
      */
-    function repeatRider(rider, count, groups, modifiers = {}) {
+    function repeatRider(
+      groups,
+      rider,
+      count,
+      positionModifier = null,
+      velocityModifier = null,
+      angleModifier = null,
+      groupModifier = null,
+    ) {
       if (!groups) throw new Error("Rider must have a group (string or array)");
       const groupSet =
         groups instanceof Set
@@ -216,34 +263,31 @@
           : new Set(Array.isArray(groups) ? groups : [groups]);
       const result = [];
       for (let i = 0; i < count; i++) {
-        const props = {
-          startPosition: modifiers.startPosition
-            ? modifiers.startPosition(rider.startPosition, i)
-            : { ...rider.startPosition },
-          startVelocity: modifiers.startVelocity
-            ? modifiers.startVelocity(rider.startVelocity, i)
-            : { ...rider.startVelocity },
-          startAngle: modifiers.startAngle
-            ? modifiers.startAngle(rider.startAngle, i)
-            : rider.startAngle,
-          ...Object.fromEntries(
-            Object.entries(rider).filter(
-              ([k]) =>
-                ![
-                  "groups",
-                  "startPosition",
-                  "startVelocity",
-                  "startAngle",
-                  "copy",
-                ].includes(k),
-            ),
-          ),
-        };
+        const pos = positionModifier
+          ? positionModifier(rider.startPosition, i)
+          : rider.startPosition;
+        const vel = velocityModifier
+          ? velocityModifier(rider.startVelocity, i)
+          : rider.startVelocity;
+        const angle = angleModifier
+          ? angleModifier(rider.startAngle, i)
+          : rider.startAngle;
         let thisGroups = new Set(groupSet);
-        if (modifiers.groups) {
-          thisGroups = modifiers.groups(new Set(thisGroups), i);
+        if (groupModifier) {
+          thisGroups = groupModifier(new Set(thisGroups), i);
         }
-        result.push(makeRider(thisGroups, props));
+
+        result.push(
+          makeRider(
+            thisGroups,
+            pos.x,
+            pos.y,
+            vel.x,
+            vel.y,
+            angle,
+            rider.remountable !== undefined ? rider.remountable : true,
+          ),
+        );
       }
       return result;
     }
@@ -308,48 +352,73 @@
     }
 
     /**
-     * Creates a base rider template with default properties
-     * @param {Object} props - Rider properties (startPosition, startVelocity, startAngle, etc.)
-     * @returns {Object} Base rider object with help method
-     */
-    function baseRider(props = {}) {
-      return {
-        help,
-        startPosition: props.startPosition || { x: 0, y: 0 },
-        startVelocity: props.startVelocity || { x: 0, y: 0 },
-        startAngle: props.startAngle || 0,
-        remountable: true,
-        ...props,
-      };
-    }
-
-    /**
-     * Displays the complete RiderManager API guide in the console
+     * Displays the complete MultiRider API guide in the console
      */
     function help() {
       console.log(`
-        Riders (return RiderSelection objects):
-          - getAllRiders() - returns RiderSelection with all riders
-          - getRidersByGroup(...groupNames) - returns RiderSelection with matching riders
-          - getRidersNotInGroup(...groupNames) - returns RiderSelection with non-matching riders
+=== MULTIRIDER API GUIDE ===
 
-        RiderSelection methods:
-          - .all() - get all contact points
-          - .only([0,1,2]) or .only(sled) - get only specific contact points
-          - .exclude([10,11,12]) or .exclude(scarf) - exclude specific contact points
-          - .toContactPoints([0,1,2]) - convert to contact point array
+CREATING RIDERS:
+  makeRider(groups, x, y, velX, velY, angle, remountable)
+    - groups: string, array, or Set (e.g., 'hero' or ['main', 'group2'])
+    - x, y: starting position (default: 0, 0)
+    - velX, velY: starting velocity (default: 0, 0)
+    - angle: starting angle in degrees (default: 0)
+    - remountable: boolean (default: true)
+    Example: makeRider('hero', 0, 0, 0.4, 0, 0, true)
+    Example: makeRider()
 
-        Predefined Point Groups:
-          - all, sled, body, scarf, notScarf
-          - peg, tail, nose, string, butt, shoulder
-          - rhand, lhand, rfoot, lfoot, hands, feet
+  repeatRider(groups, rider, count, posMod, velMod, angleMod, groupMod)
+    - Creates multiple copies of a rider with optional modifiers
+    - rider: A rider object created with makeRider()
+    - count: Number of copies to create
+    - groups: Group name(s) for the repeated riders
+    - Modifiers are optional functions: (value, index) => newValue
+    Example: repeatRider(makeRider('_', 0, 0), 5, 'clones', (pos, i) => ({x: pos.x + i*10, y: pos.y}))
 
-        Examples:
-          getAllRiders().only(sled) // All riders, sled points only
-          getRidersByGroup('main').exclude(scarf) // Main group without scarf
-          getAllRiders().only(body) // All riders, body only
-          getRidersByGroup('hero').only(hands) // Hero group, hands only
-          `);
+MANAGING RIDERS:
+  addRider(rider)         - Add one or more riders (single object or array)
+  clearRiders()           - Remove all riders from scene
+  setRiders(riders)       - Replace all riders with new set (advanced)
+
+SELECTING RIDERS (returns RiderSelection):
+  getAllRiders()                    - All riders in scene
+  getRidersByGroup(...groupNames)   - Riders in any of the groups
+  getRidersNotInGroup(...groupNames) - Riders NOT in any of the groups
+
+RIDERSELECTION METHODS:
+  .all()              - Get all 17 contact points for selected riders
+  .only(pointGroup)   - Get only specific contact points
+  .exclude(pointGroup) - Get all except specific contact points
+
+PREDEFINED POINT GROUPS:
+  Regions: all, sled, body, scarf, notScarf
+  Individual: peg, tail, nose, string, butt, shoulder
+              rhand, lhand, rfoot, lfoot, hands, feet
+
+COMPLETE EXAMPLES:
+  // Create and add a single rider
+  const hero = makeRider('hero', 0, 0, 0.4, 0, 0, true);
+  addRider(hero);
+  // Alternatively:
+  addRider(makeRider('hero', 0, 0, 0.4, 0, 0, true))
+
+  // Create multiple riders at different positions
+  const template = makeRider('_', 0, 0);
+  const clones = repeatRider(template, 5, 'clones', (pos, i) => ({x: pos.x + i*10, y: pos.y}));
+  addRider(clones);
+
+  // Select specific riders and contact points
+  getAllRiders().only(sled)              // All riders, sled only
+  getRidersByGroup('hero').all()         // Hero group, all points
+  getRidersByGroup('main').exclude(scarf) // Main group without scarf
+  getRidersNotInGroup('enemy').only(body) // Non-enemy riders, body only
+
+  // Use with Gravity API (if installed)
+  setGravityKeyframes([
+    [[0, 2, 0], getRidersByGroup('hero').only(body), setGravity(0, 0.5, 80)]
+  ]);
+      `);
     }
 
     return {
@@ -359,8 +428,8 @@
       getRidersNotInGroup,
 
       // Utility
+      setRiders,
       addRider,
-      baseRider,
       makeRider,
       repeatRider,
       clearRiders,
@@ -374,21 +443,21 @@
     };
   })();
 
-  // Expose RiderManager object
-  window.RiderManager = RiderManager;
+  // Expose MultiRiderAPI object
+  window.MultiRiderAPI = MultiRiderAPI;
 
   // Expose PointGroups globally for easy access
-  window.PointGroups = RiderManager.PointGroups;
+  window.PointGroups = MultiRiderAPI.PointGroups;
   // Expose all functions globally
-  window.getAllRiders = RiderManager.getAllRiders;
-  window.getRidersByGroup = RiderManager.getRidersByGroup;
-  window.getRidersNotInGroup = RiderManager.getRidersNotInGroup;
-  window.addRider = RiderManager.addRider;
-  window.baseRider = RiderManager.baseRider;
-  window.makeRider = RiderManager.makeRider;
-  window.repeatRider = RiderManager.repeatRider;
-  window.clearRiders = RiderManager.clearRiders;
-  window.RiderSelection = RiderManager.RiderSelection;
+  window.getAllRiders = MultiRiderAPI.getAllRiders;
+  window.getRidersByGroup = MultiRiderAPI.getRidersByGroup;
+  window.getRidersNotInGroup = MultiRiderAPI.getRidersNotInGroup;
+  window.addRider = MultiRiderAPI.addRider;
+  window.makeRider = MultiRiderAPI.makeRider;
+  window.repeatRider = MultiRiderAPI.repeatRider;
+  window.setRiders = MultiRiderAPI.setRiders;
+  window.clearRiders = MultiRiderAPI.clearRiders;
+  window.RiderSelection = MultiRiderAPI.RiderSelection;
 
   // Expose individual point groups globally for convenience
   const {
@@ -409,7 +478,7 @@
     rfoot,
     hands,
     feet,
-  } = RiderManager.PointGroups;
+  } = MultiRiderAPI.PointGroups;
   window.all = all;
   window.sled = sled;
   window.body = body;
@@ -429,6 +498,6 @@
   window.feet = feet;
 
   console.log(
-    "🚴 Multirider API loaded! All functions available globally. Type RiderManager.help() for API guide.",
+    "🚴 Multirider API loaded! All functions available globally. Type MultiRiderAPI.help() for API guide.",
   );
 })();

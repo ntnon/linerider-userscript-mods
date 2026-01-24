@@ -19,6 +19,30 @@
 // @grant        none
 
 // ==/UserScript==
+
+/*
+ * USAGE EXAMPLES:
+ *
+ * // Set gravity at frame 100 for all contact points
+ * setGravityKeyframes([
+ *   [[0, 2, 20], all, setGravity(0, 0.5, 100)]
+ * ]);
+ *
+ * // Teleport rider at timestamp [0, 3, 0]
+ * setGravityKeyframes([
+ *   [[0, 3, 0], all, teleport(10, -5, 0, 0.175, frameNumber)]
+ * ]);
+ *
+ * // Transform rider to position (100, 50) at frame 200
+ * setGravityKeyframes([
+ *   [[0, 5, 0], all, transformRider(0, 100, 50, true, null, 0, 0, 0.175, 200)]
+ * ]);
+ *
+ * // Lock to Y axis at y=50 with max force 2.0 for 40 frames starting at frame 300
+ * setGravityKeyframes([
+ *   [[0, 7, 20], sled, lockToAxis(null, 50, 2.0, 40, 300, sled)]
+ * ]);
+ */
 (function () {
   "use strict";
 
@@ -192,6 +216,14 @@
       return shape;
     }
 
+    /**
+     * Applies gravity keyframes with optional interval grouping
+     * @param {Array} baseTimestamp - Timestamp as [minutes, seconds, frames]
+     * @param {Array} contactPoints - Array of contact point indices
+     * @param {Function} keyframeFn - Function that generates keyframes
+     * @param {Function} intervalFn - Function to compute interval offsets (default: simultaneous)
+     * @returns {Array} Generated keyframes
+     */
     function applyGravity(
       baseTimestamp,
       contactPoints,
@@ -244,78 +276,164 @@
       }).flat();
     }
 
-    const setGravity =
-      ({ x, y }) =>
-      (t, cp = all) => [[t, cp, (_keyframeContext) => ({ x, y })]];
-
-    const pulseGravity =
-      ({ x, y, duration = 0, normalGravity }) =>
-      (t, cp = all) => [
-        [t, cp, (_keyframeContext) => ({ x, y }), true],
-        [t + duration + 1, cp, (_keyframeContext) => normalGravity, true],
-      ];
-
-    const teleport =
-      ({ dx, dy, normalGravity = { x: 0, y: 0.175 } }) =>
-      (t, cp = all) => [
+    /**
+     * Sets constant gravity for specified contact points at a given time
+     * @param {number} gravityX - X component of gravity
+     * @param {number} gravityY - Y component of gravity
+     * @param {number} time - Frame number to apply gravity
+     * @param {Array} contactPoints - Array of contact point indices (default: all points)
+     * @returns {Array} Keyframe data
+     */
+    function setGravity(gravityX, gravityY, time, contactPoints = all) {
+      return [
         [
-          t,
-          cp,
+          time,
+          contactPoints,
+          (_keyframeContext) => ({ x: gravityX, y: gravityY }),
+        ],
+      ];
+    }
+
+    /**
+     * Applies a temporary gravity pulse that returns to normal gravity after duration
+     * @param {number} gravityX - X component of pulse gravity
+     * @param {number} gravityY - Y component of pulse gravity
+     * @param {number} duration - Duration in frames for the pulse
+     * @param {number} normalGravityX - X component of normal gravity to return to
+     * @param {number} normalGravityY - Y component of normal gravity to return to
+     * @param {number} time - Frame number to start the pulse
+     * @param {Array} contactPoints - Array of contact point indices (default: all points)
+     * @returns {Array} Keyframe data
+     */
+    function pulseGravity(
+      gravityX,
+      gravityY,
+      duration,
+      normalGravityX,
+      normalGravityY,
+      time,
+      contactPoints = all,
+    ) {
+      const normalGravity = { x: normalGravityX, y: normalGravityY };
+      return [
+        [
+          time,
+          contactPoints,
+          (_keyframeContext) => ({ x: gravityX, y: gravityY }),
+          true,
+        ],
+        [
+          time + duration + 1,
+          contactPoints,
+          (_keyframeContext) => normalGravity,
+          true,
+        ],
+      ];
+    }
+
+    /**
+     * Teleports the rider by applying instantaneous displacement
+     * @param {number} deltaX - X displacement
+     * @param {number} deltaY - Y displacement
+     * @param {number} normalGravityX - X component of normal gravity to return to (default: 0)
+     * @param {number} normalGravityY - Y component of normal gravity to return to (default: 0.175)
+     * @param {number} time - Frame number to apply teleport
+     * @param {Array} contactPoints - Array of contact point indices (default: all points)
+     * @returns {Array} Keyframe data
+     */
+    function teleport(
+      deltaX,
+      deltaY,
+      normalGravityX,
+      normalGravityY,
+      time,
+      contactPoints = all,
+    ) {
+      const normalGravity = {
+        x: normalGravityX !== undefined ? normalGravityX : 0,
+        y: normalGravityY !== undefined ? normalGravityY : 0.175,
+      };
+      return [
+        [
+          time,
+          contactPoints,
           (ctx) => ({
-            x: dx,
-            y: dy,
+            x: deltaX,
+            y: deltaY,
           }),
           true,
         ],
-        [t + 1, cp, (ctx) => ({ x: -dx, y: -dy }), true],
-        [t + 2, cp, (_ctx) => normalGravity, true],
+        [time + 1, contactPoints, (ctx) => ({ x: -deltaX, y: -deltaY }), true],
+        [time + 2, contactPoints, (_ctx) => normalGravity, true],
       ];
+    }
 
-    const transformRider =
-      ({
-        anchorPoint = null,
-        position = null,
-        isAbsolute = false,
-        shape = null,
-        rotation = 0,
-        normalGravity = { x: 0, y: 0.175 },
-      }) =>
-      (t, cp = all) => {
-        return [
-          [
-            t,
-            cp,
-            (keyframeContext) => {
-              const targetPos = calculateTargetPosition({
-                contactPoint: keyframeContext.contactPoint,
-                anchorPoint,
-                targetPosition: position,
-                isAbsolute,
-                shape,
-                rotation,
-                riderData: keyframeContext.riderData,
-              });
-              const pos = keyframeContext.contactPointData.pos;
-
-              return {
-                x: targetPos.x - pos.x - keyframeContext.contactPointData.vel.x,
-                y: targetPos.y - pos.y - keyframeContext.contactPointData.vel.y,
-              };
-            },
-            true,
-          ],
-          [
-            t + 1,
-            cp,
-            (keyframeContext) => {
-              const vel = keyframeContext.contactPointData.vel;
-              return { x: -vel.x, y: -vel.y };
-            },
-            true,
-          ],
-          [t + 2, cp, (_keyframeContext) => normalGravity, true],
-        ];
+    /**
+     * Transforms the rider to a target position with optional rotation
+     * @param {number} anchorPoint - Contact point to use as anchor (0-16)
+     * @param {number} positionX - Target X position
+     * @param {number} positionY - Target Y position
+     * @param {boolean} isAbsolute - Whether position is absolute (true) or relative (false)
+     * @param {Object} shape - Shape configuration object (default: DefaultShape)
+     * @param {number} rotation - Rotation angle in degrees
+     * @param {number} normalGravityX - X component of normal gravity to return to (default: 0)
+     * @param {number} normalGravityY - Y component of normal gravity to return to (default: 0.175)
+     * @param {number} time - Frame number to apply transformation
+     * @param {Array} contactPoints - Array of contact point indices (default: all points)
+     * @returns {Array} Keyframe data
+     */
+    function transformRider(
+      anchorPoint,
+      positionX,
+      positionY,
+      isAbsolute,
+      shape,
+      rotation,
+      normalGravityX,
+      normalGravityY,
+      time,
+      contactPoints = all,
+    ) {
+      const position = { x: positionX, y: positionY };
+      const normalGravity = {
+        x: normalGravityX !== undefined ? normalGravityX : 0,
+        y: normalGravityY !== undefined ? normalGravityY : 0.175,
       };
+      return [
+        [
+          time,
+          contactPoints,
+          (keyframeContext) => {
+            const targetPos = calculateTargetPosition({
+              contactPoint: keyframeContext.contactPoint,
+              anchorPoint,
+              targetPosition: position,
+              isAbsolute,
+              shape,
+              rotation,
+              riderData: keyframeContext.riderData,
+            });
+            const pos = keyframeContext.contactPointData.pos;
+
+            return {
+              x: targetPos.x - pos.x - keyframeContext.contactPointData.vel.x,
+              y: targetPos.y - pos.y - keyframeContext.contactPointData.vel.y,
+            };
+          },
+          true,
+        ],
+        [
+          time + 1,
+          contactPoints,
+          (keyframeContext) => {
+            const vel = keyframeContext.contactPointData.vel;
+            return { x: -vel.x, y: -vel.y };
+          },
+          true,
+        ],
+        [time + 2, contactPoints, (_keyframeContext) => normalGravity, true],
+      ];
+    }
 
     function lockToAxisFn(
       { x = null, y = null },
@@ -354,18 +472,60 @@
       return keyframes;
     }
 
-    const lockToAxis =
-      ({ x = null, y = null }, maxForce, duration) =>
-      (t, cp) =>
-        lockToAxisFn({ x, y }, maxForce, duration, t, cp);
+    /**
+     * Locks contact points to specific axis positions using bounded force
+     * @param {number|null} axisX - X axis position to lock to (null to ignore X)
+     * @param {number|null} axisY - Y axis position to lock to (null to ignore Y)
+     * @param {number} maxForce - Maximum force to apply for locking
+     * @param {number} duration - Duration in frames to maintain lock
+     * @param {number} time - Frame number to start locking
+     * @param {Array} contactPoints - Array of contact point indices
+     * @returns {Array} Keyframe data
+     */
+    function lockToAxis(axisX, axisY, maxForce, duration, time, contactPoints) {
+      return lockToAxisFn(
+        { x: axisX, y: axisY },
+        maxForce,
+        duration,
+        time,
+        contactPoints,
+      );
+    }
 
+    /**
+     * Interval functions for spacing keyframe application across contact point groups
+     */
     const Intervals = {
+      /**
+       * Apply to all groups simultaneously (no offset)
+       * @returns {number} Always returns 0
+       */
       simultaneous: () => 0,
+
+      /**
+       * Stagger application by fixed frame intervals
+       * @param {number} frames - Number of frames between each group
+       * @returns {Function} Function that returns frame offset for group index
+       */
       stagger: (frames) => (i) => i * frames,
+
+      /**
+       * Apply with exponential spacing
+       * @param {number} base - Base for exponential growth
+       * @param {number} scale - Scaling factor (default: 1)
+       * @returns {Function} Function that returns frame offset for group index
+       */
       exponential:
         (base, scale = 1) =>
         (i) =>
           Math.pow(base, i) * scale,
+
+      /**
+       * Apply with sinusoidal spacing
+       * @param {number} period - Period of the sine wave
+       * @param {number} amplitude - Amplitude of the sine wave
+       * @returns {Function} Function that returns frame offset for group index
+       */
       sine: (period, amplitude) => (i) => Math.sin(i * period) * amplitude,
     };
 
@@ -405,6 +565,10 @@
       return found ? lastGravity : DEFAULT_GRAVITY;
     }
 
+    /**
+     * Sets gravity keyframes for the simulation
+     * @param {Array} items - Array of keyframe items in format [timestamp, contactPoints, keyframeFn, intervalFn?]
+     */
     function setGravityKeyframes(items) {
       // Process items - accept array format [timestamp, contactPoints/RiderSelection, keyframeFn, intervalFn?]
       const processedKeyframes = items.map((item) => {
@@ -444,6 +608,10 @@
       this.triggerSubscriberHack();
     }
 
+    /**
+     * Triggers the gravity system by hooking into the engine's gravity property
+     * @internal
+     */
     function triggerSubscriberHack() {
       Object.defineProperty(window.$ENGINE_PARAMS, "gravity", {
         get() {
@@ -528,6 +696,8 @@
       KeyframeFns,
       Intervals,
       Shapes,
+      ContactPoints,
+      PointGroups,
 
       // Gravity functions
       lockToAxis,
@@ -540,8 +710,23 @@
 
   window.GravityAPI = GravityAPI;
 
+  // Expose all main functions globally with proper signatures
   window.applyGravity = GravityAPI.applyGravity;
+  window.setGravityKeyframes = GravityAPI.setGravityKeyframes;
+  window.triggerSubscriberHack = GravityAPI.triggerSubscriberHack;
+  window.setGravity = GravityAPI.setGravity;
+  window.pulseGravity = GravityAPI.pulseGravity;
+  window.teleport = GravityAPI.teleport;
+  window.transformRider = GravityAPI.transformRider;
+  window.lockToAxis = GravityAPI.lockToAxis;
 
-  console.log("🚴 Gravity API loaded! All functions available globally");
-  console.log(GravityAPI);
+  // Expose constants
+  window.Intervals = GravityAPI.Intervals;
+  window.Shapes = GravityAPI.Shapes;
+  window.ContactPoints = GravityAPI.ContactPoints;
+  window.PointGroups = GravityAPI.PointGroups;
+
+  console.log(
+    "🚴 Gravity API loaded! All functions available globally. Type GravityAPI for the full API.",
+  );
 })();

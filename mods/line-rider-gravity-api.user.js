@@ -253,9 +253,7 @@
         console.log("Validating keyframes:", keyframes);
         return (
           Array.isArray(keyframes) &&
-          keyframes.every(
-            (kf) => Array.isArray(kf) && (kf.length === 3 || kf.length === 4),
-          )
+          keyframes.every((kf) => Array.isArray(kf) && kf.length === 3)
         );
       };
 
@@ -293,35 +291,38 @@
     }
 
     /**
-     * Applies a temporary gravity pulse that returns to normal after duration
+     * Applies a temporary gravity pulse that returns to the last setGravity value after duration
      * @param {number} x - X component of pulse gravity
      * @param {number} y - Y component of pulse gravity
      * @param {number} duration - Duration in frames for the pulse
-     * @param {number} normalX - X component of normal gravity (default: 0)
-     * @param {number} normalY - Y component of normal gravity (default: 0.175)
+     * @param {number} normalX - X component to return to (default: null, uses last setGravity)
+     * @param {number} normalY - Y component to return to (default: null, uses last setGravity)
      * @returns {Function} Function (time, contactPoints) => keyframes
      */
-    function pulseGravity(x, y, duration = 1, normalX, normalY) {
+    function pulseGravity(x, y, duration = 1, normalX = null, normalY = null) {
       if (duration < 1) throw Error("Duration must be 1 or more");
       return (t, cp) => [
         [t, cp, (_keyframeContext) => ({ x, y })],
         [
           t + duration + 1,
           cp,
-          (_keyframeContext) => ({ x: normalX, y: normalY }),
+          (keyframeContext) => ({
+            x: normalX ?? keyframeContext.lastDefaultGravity.x,
+            y: normalY ?? keyframeContext.lastDefaultGravity.y,
+          }),
         ],
       ];
     }
 
     /**
-     * Teleports the rider by applying instantaneous displacement
+     * Teleports the rider by applying instantaneous displacement, then returns to last setGravity
      * @param {number} deltaX - X displacement
      * @param {number} deltaY - Y displacement
-     * @param {number} normalX - X component of normal gravity (default: 0)
-     * @param {number} normalY - Y component of normal gravity (default: 0.175)
+     * @param {number} normalX - X component to return to (default: null, uses last setGravity)
+     * @param {number} normalY - Y component to return to (default: null, uses last setGravity)
      * @returns {Function} Function (time, contactPoints) => keyframes
      */
-    function teleport(dx, dy, normalX = 0, normalY = 0.175) {
+    function teleport(dx, dy, normalX = null, normalY = null) {
       return (t, cp) => [
         [
           t,
@@ -332,7 +333,14 @@
           }),
         ],
         [t + 1, cp, (ctx) => ({ x: -dx, y: -dy })],
-        [t + 2, cp, (_ctx) => ({ x: normalX, y: normalY })],
+        [
+          t + 2,
+          cp,
+          (ctx) => ({
+            x: normalX ?? ctx.lastDefaultGravity.x,
+            y: normalY ?? ctx.lastDefaultGravity.y,
+          }),
+        ],
       ];
     }
 
@@ -356,15 +364,14 @@
         isAbsolute = false,
         pose = null,
         angle = 0,
-        normalGravityX = 0,
-        normalGravityY = 0.175,
+        normalGravityX = null,
+        normalGravityY = null,
       ) =>
       (t, cp = all) => {
         const position =
           positionX !== null && positionY !== null
             ? { x: positionX, y: positionY }
             : null;
-        const normalGravity = { x: normalGravityX, y: normalGravityY };
 
         return [
           [
@@ -396,7 +403,17 @@
               return { x: -vel.x, y: -vel.y };
             },
           ],
-          [t + 2, cp, (_keyframeContext) => normalGravity],
+          [
+            t + 2,
+            cp,
+            (keyframeContext) => ({
+              x: normalGravityX ?? keyframeContext.lastDefaultGravity?.x ?? 0,
+              y:
+                normalGravityY ??
+                keyframeContext.lastDefaultGravity?.y ??
+                0.175,
+            }),
+          ],
         ];
       };
 
@@ -408,8 +425,8 @@
         isAbsolute: false,
         pose: null,
         rotation: 0,
-        normalGravityX: 0,
-        normalGravityY: 0.175,
+        normalGravityX: null,
+        normalGravityY: null,
       };
 
       const call = (t, cp) => {
@@ -555,31 +572,45 @@
       context,
     }) {
       let lastGravity = undefined;
+      let lastDefaultGravity = null;
       let found = false;
-      for (const [timestamp, cps, gravityFn, computed] of keyframes) {
+      for (const [timestamp, cps, gravityFn] of keyframes) {
         const frame = Array.isArray(timestamp)
           ? timestampToFrames(timestamp)
           : timestamp;
         if (frame > frameIndex) break;
         if (!cps.includes(globalCpIndex)) continue;
 
-        if (computed) {
-          // Use the last non-computed gravity found so far
-          lastGravity = gravityFn({
-            ...context,
-            frameIndex,
-            globalCpIndex,
-            lastGravity,
-          });
-        } else {
-          lastGravity = gravityFn({
-            ...context,
-            frameIndex,
-            globalCpIndex,
-            lastGravity,
-          });
+        lastGravity = gravityFn({
+          ...context,
+          frameIndex,
+          globalCpIndex,
+          lastGravity,
+          lastDefaultGravity,
+        });
+
+        // Track the last default gravity for temporary effects to fall back to
+        if (lastGravity && lastGravity.__default) {
+          lastDefaultGravity = { x: lastGravity.x, y: lastGravity.y };
         }
+
+        // Guard: check if gravity has null values
+        if (lastGravity && (lastGravity.x == null || lastGravity.y == null)) {
+          console.error("Gravity function produced null value:");
+          console.error("  Frame:", frameIndex);
+          console.error("  Contact Point Index:", globalCpIndex);
+          console.error("  Timestamp:", timestamp);
+          console.error("  Contact Points:", cps);
+          console.error("  Result:", lastGravity);
+          console.error("  Gravity Function:", gravityFn);
+        }
+
         found = true;
+      }
+      if (!found) {
+        throw new Error(
+          'No gravity keyframe found. Please begin your gravity keyframes with "setGravityKeyframes" that targets all contact points.',
+        );
       }
       return found ? lastGravity : DEFAULT_GRAVITY;
     }
@@ -588,11 +619,15 @@
      * Sets gravity keyframes for the simulation
      * @param {Array} items - Array of keyframe items in format [timestamp, contactPoints, keyframeFn, intervalFn?]
      */
+    function isValidTimestamp(ts) {
+      return Array.isArray(ts) || typeof ts === "number";
+    }
+
     function setGravityKeyframes(items) {
       // Process items - accept array format [timestamp, contactPoints/RiderSelection, keyframeFn, intervalFn?]
       const processedKeyframes = items.map((item) => {
         // If it's an array [timestamp, contactPoints/RiderSelection, keyframeFn, intervalFn?]
-        if (Array.isArray(item) && Array.isArray(item[0])) {
+        if (Array.isArray(item) && isValidTimestamp(item[0])) {
           let contactPoints = item[1];
 
           // Auto-detect and convert RiderSelection to contact points
@@ -600,8 +635,12 @@
             contactPoints = contactPoints.toContactPoints();
           }
 
+          // Convert number timestamp to array format [minutes, seconds, frames]
+          const timestamp =
+            typeof item[0] === "number" ? [0, 0, item[0]] : item[0];
+
           return applyGravity(
-            item[0], // timestamp
+            timestamp, // timestamp
             contactPoints, // contactPoints (converted if needed)
             item[2], // keyframeFn
             item[3] || Intervals.simultaneous, // intervalFn (optional)
@@ -734,8 +773,9 @@
 					  Instantly displaces by (dx, dy), applies inverse correction next frame,
 					  then restores to fallback/end gravity (normalX, normalY).
 
-					- lockToAxis({ x = null, y = null }, maxForce, duration, startFrame, contactPoints)
-					  Pulls each frame toward x and/or y with clamped force, then restores to the rider’s last gravity.
+					- lockToAxis(x = null, y = null, maxForce, duration, tweenFn = Tween.none)
+					  Pulls each frame toward x and/or y with clamped force, with optional tweening.
+					  Returns to the rider's last gravity after duration.
 
 					- adjustRider()
 					  Returns a chainable builder that produces a function (t, cp) => keyframes.

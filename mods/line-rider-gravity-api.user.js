@@ -69,7 +69,7 @@
       SCARF_6: 16,
     };
 
-    const DefaultShape = {
+    const DefaultPose = {
       [ContactPoints.PEG]: { x: 0, y: 0 },
       [ContactPoints.TAIL]: { x: 0, y: 5 },
       [ContactPoints.NOSE]: { x: 15, y: 5 },
@@ -89,7 +89,7 @@
       [ContactPoints.SCARF_6]: { x: -9, y: -5.5 },
     };
 
-    const KramualShape = {
+    const KramualPose = {
       [ContactPoints.PEG]: { x: 0, y: 0 },
       [ContactPoints.TAIL]: { x: -0.48, y: 0 },
       [ContactPoints.NOSE]: { x: 16.9, y: 0 },

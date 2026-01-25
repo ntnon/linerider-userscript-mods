@@ -330,7 +330,6 @@
             x: dx,
             y: dy,
           }),
-          true,
         ],
         [t + 1, cp, (ctx) => ({ x: -dx, y: -dy })],
         [t + 2, cp, (_ctx) => ({ x: normalX, y: normalY })],

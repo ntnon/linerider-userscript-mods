@@ -485,7 +485,128 @@
       return call;
     }
 
-    function lockToAxisFn(x, y, maxForce, duration) {
+    /**
+     * Tweening/easing functions for smooth animations
+     * All functions take a normalized time value (0-1) and return a tweened value (0-1)
+     */
+    const Tween = {
+      /**
+       * No easing - constant value throughout duration
+       * @param {number} t - Normalized time (0-1)
+       * @returns {number} Always returns 1
+       */
+      none: (t) => 1,
+
+      /**
+       * Linear interpolation
+       * @param {number} t - Normalized time (0-1)
+       * @returns {number} Linear interpolation
+       */
+      linear: (t) => t,
+
+      /**
+       * Quadratic ease in
+       * @param {number} t - Normalized time (0-1)
+       * @returns {number} Eased value
+       */
+      easeInQuad: (t) => t * t,
+
+      /**
+       * Quadratic ease out
+       * @param {number} t - Normalized time (0-1)
+       * @returns {number} Eased value
+       */
+      easeOutQuad: (t) => t * (2 - t),
+
+      /**
+       * Quadratic ease in-out
+       * @param {number} t - Normalized time (0-1)
+       * @returns {number} Eased value
+       */
+      easeInOutQuad: (t) => (t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t),
+
+      /**
+       * Cubic ease in
+       * @param {number} t - Normalized time (0-1)
+       * @returns {number} Eased value
+       */
+      easeInCubic: (t) => t * t * t,
+
+      /**
+       * Cubic ease out
+       * @param {number} t - Normalized time (0-1)
+       * @returns {number} Eased value
+       */
+      easeOutCubic: (t) => --t * t * t + 1,
+
+      /**
+       * Cubic ease in-out
+       * @param {number} t - Normalized time (0-1)
+       * @returns {number} Eased value
+       */
+      easeInOutCubic: (t) =>
+        t < 0.5 ? 4 * t * t * t : (t - 1) * (2 * t - 2) * (2 * t - 2) + 1,
+
+      /**
+       * Sine ease in
+       * @param {number} t - Normalized time (0-1)
+       * @returns {number} Eased value
+       */
+      easeInSine: (t) => 1 - Math.cos((t * Math.PI) / 2),
+
+      /**
+       * Sine ease out
+       * @param {number} t - Normalized time (0-1)
+       * @returns {number} Eased value
+       */
+      easeOutSine: (t) => Math.sin((t * Math.PI) / 2),
+
+      /**
+       * Sine ease in-out
+       * @param {number} t - Normalized time (0-1)
+       * @returns {number} Eased value
+       */
+      easeInOutSine: (t) => -(Math.cos(Math.PI * t) - 1) / 2,
+
+      /**
+       * Exponential ease in
+       * @param {number} t - Normalized time (0-1)
+       * @returns {number} Eased value
+       */
+      easeInExpo: (t) => (t === 0 ? 0 : Math.pow(2, 10 * t - 10)),
+
+      /**
+       * Exponential ease out
+       * @param {number} t - Normalized time (0-1)
+       * @returns {number} Eased value
+       */
+      easeOutExpo: (t) => (t === 1 ? 1 : 1 - Math.pow(2, -10 * t)),
+
+      /**
+       * Exponential ease in-out
+       * @param {number} t - Normalized time (0-1)
+       * @returns {number} Eased value
+       */
+      easeInOutExpo: (t) =>
+        t === 0
+          ? 0
+          : t === 1
+            ? 1
+            : t < 0.5
+              ? Math.pow(2, 20 * t - 10) / 2
+              : (2 - Math.pow(2, -20 * t + 10)) / 2,
+    };
+
+    /**
+     * Locks contact points to specific axis positions using bounded force with optional tweening
+     * @param {number|null} x - X axis position to lock to (null to ignore X)
+     * @param {number|null} y - Y axis position to lock to (null to ignore Y)
+     * @param {number} maxForce - Maximum force to apply for locking
+     * @param {number} duration - Duration in frames to maintain lock
+     * @param {Function} tweenFn - Tweening function (default: Tween.none for constant force)
+     * @returns {Function} Function (startFrame, contactPoints) => keyframes
+     */
+    function lockToAxisFn(x, y, maxForce, duration, tweenFn = Tween.none) {
       return (startFrame, contactPoints) => {
         const keyframes = [];
         for (let i = 0; i < duration; i++) {
@@ -494,14 +615,16 @@
             contactPoints,
             (keyframeContext) => {
               const pos = keyframeContext.contactPointData.pos;
+              const t = i / Math.max(duration - 1, 1); // Normalize time to 0-1
+              const tweenedForce = tweenFn(t) * maxForce;
               let force = { x: 0, y: 0 };
               if (x !== null) {
                 const dx = x - pos.x;
-                force.x = Math.max(-maxForce, Math.min(maxForce, dx));
+                force.x = Math.max(-tweenedForce, Math.min(tweenedForce, dx));
               }
               if (y !== null) {
                 const dy = y - pos.y;
-                force.y = Math.max(-maxForce, Math.min(maxForce, dy));
+                force.y = Math.max(-tweenedForce, Math.min(tweenedForce, dy));
               }
               return force;
             },
@@ -522,10 +645,33 @@
      * @param {number|null} axisY - Y axis position to lock to (null to ignore Y)
      * @param {number} maxForce - Maximum force to apply for locking
      * @param {number} duration - Duration in frames to maintain lock
-     * @returns {Array} Keyframe data
+     * @param {Function} tweenFn - Optional tweening function (default: Tween.none)
+     * @returns {Function} Keyframe generator function
+     *
+     * @example
+     * // Lock to Y=100 with constant force
+     * applyGravity([0, 1, 0], all, lockToAxis(null, 100, 2, 40));
+     *
+     * @example
+     * // Lock to X=50 with ease-out (starts strong, ends gentle)
+     * applyGravity([0, 1, 0], all, lockToAxis(50, null, 3, 60, Tween.easeOutQuad));
+     *
+     * @example
+     * // Lock to position (100, 200) with ease-in-out for smooth motion
+     * applyGravity([0, 1, 0], all, lockToAxis(100, 200, 2, 80, Tween.easeInOutCubic));
+     *
+     * @example
+     * // Linear increase in force over time
+     * applyGravity([0, 1, 0], all, lockToAxis(0, 0, 5, 100, Tween.linear));
      */
-    function lockToAxis(axisX, axisY, maxForce, duration) {
-      return lockToAxisFn(axisX, axisY, maxForce, duration);
+    function lockToAxis(
+      axisX,
+      axisY,
+      maxForce,
+      duration,
+      tweenFn = Tween.none,
+    ) {
+      return lockToAxisFn(axisX, axisY, maxForce, duration, tweenFn);
     }
 
     /**
@@ -795,6 +941,7 @@
       setGravityKeyframes,
       Intervals,
       Poses,
+      Tween,
 
       // Gravity functions
       setGravity,
@@ -820,6 +967,7 @@
 
   // Expose constants
   window.Intervals = GravityAPI.Intervals;
+  window.Tween = GravityAPI.Tween;
   window.Shapes = GravityAPI.Shapes;
   window.ContactPoints = GravityAPI.ContactPoints;
   window.PointGroups = GravityAPI.PointGroups;

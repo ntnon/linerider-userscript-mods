@@ -124,13 +124,17 @@
       );
     }
 
+    function toFrameIndex(ts) {
+      return Array.isArray(ts) ? timestampToFrames(ts) : ts;
+    }
+
     function calculateTargetPosition({
       contactPoint,
       anchorPoint = null,
       targetPosition,
       isAbsolute,
-      shape,
-      rotation = 0,
+      pose,
+      angle = 0,
       riderData,
     }) {
       // Determine anchor (default to PEG)
@@ -144,10 +148,10 @@
       }
 
       let relativeOffset;
-      if (shape) {
-        // Use provided shape offsets
-        const anchorOffset = shape[anchor];
-        const contactPointOffset = shape[contactPoint];
+      if (pose) {
+        // Use provided pose offsets
+        const anchorOffset = pose[anchor];
+        const contactPointOffset = pose[contactPoint];
 
         relativeOffset = {
           x: contactPointOffset.x - anchorOffset.x,
@@ -163,13 +167,13 @@
         };
       }
 
-      // Apply rotation if needed
-      if (rotation !== 0) {
-        relativeOffset = rotateOffset(relativeOffset, rotation);
+      // Apply angle if needed
+      if (angle !== 0) {
+        relativeOffset = rotateOffset(relativeOffset, angle);
       }
 
       if (isAbsolute && targetPosition !== null) {
-        // Place anchor at absolute position, maintain shape for other points
+        // Place anchor at absolute position, maintain pose for other points
         return {
           x: targetPosition.x + relativeOffset.x,
           y: targetPosition.y + relativeOffset.y,
@@ -191,8 +195,8 @@
       };
     }
 
-    function resolveShape(shape, riderData, anchor) {
-      return shape || buildCurrentShape(riderData, anchor);
+    function resolvePose(pose, riderData, anchor) {
+      return pose || buildCurrentPose(riderData, anchor);
     }
 
     function rotateOffset(offset, angleDegrees) {
@@ -206,14 +210,14 @@
       };
     }
 
-    function buildCurrentShape(riderData, anchor) {
+    function buildCurrentPose(riderData, anchor) {
       const anchorPos = riderData.points[anchor].pos;
-      const shape = {};
+      const pose = {};
       for (const cp in riderData.points) {
         const p = riderData.points[cp].pos;
-        shape[cp] = { x: p.x - anchorPos.x, y: p.y - anchorPos.y };
+        pose[cp] = { x: p.x - anchorPos.x, y: p.y - anchorPos.y };
       }
-      return shape;
+      return pose;
     }
 
     /**
@@ -277,56 +281,34 @@
     }
 
     /**
-     * Sets constant gravity for specified contact points at a given time
-     * @param {number} gravityX - X component of gravity
-     * @param {number} gravityY - Y component of gravity
-     * @param {number} time - Frame number to apply gravity
-     * @param {Array} contactPoints - Array of contact point indices (default: all points)
-     * @returns {Array} Keyframe data
+     * Sets constant gravity
+     * @param {number} x - X component of gravity
+     * @param {number} y - Y component of gravity
+     * @returns {Function} Function (time, contactPoints) => keyframes
      */
-    function setGravity(gravityX, gravityY, time, contactPoints = all) {
-      return [
-        [
-          time,
-          contactPoints,
-          (_keyframeContext) => ({ x: gravityX, y: gravityY }),
-        ],
+    function setGravity(x, y) {
+      return (t, cp) => [
+        [t, cp, (_keyframeContext) => ({ x, y, __default: true })],
       ];
     }
 
     /**
-     * Applies a temporary gravity pulse that returns to normal gravity after duration
-     * @param {number} gravityX - X component of pulse gravity
-     * @param {number} gravityY - Y component of pulse gravity
+     * Applies a temporary gravity pulse that returns to normal after duration
+     * @param {number} x - X component of pulse gravity
+     * @param {number} y - Y component of pulse gravity
      * @param {number} duration - Duration in frames for the pulse
-     * @param {number} normalGravityX - X component of normal gravity to return to
-     * @param {number} normalGravityY - Y component of normal gravity to return to
-     * @param {number} time - Frame number to start the pulse
-     * @param {Array} contactPoints - Array of contact point indices (default: all points)
-     * @returns {Array} Keyframe data
+     * @param {number} normalX - X component of normal gravity (default: 0)
+     * @param {number} normalY - Y component of normal gravity (default: 0.175)
+     * @returns {Function} Function (time, contactPoints) => keyframes
      */
-    function pulseGravity(
-      gravityX,
-      gravityY,
-      duration,
-      normalGravityX,
-      normalGravityY,
-      time,
-      contactPoints = all,
-    ) {
-      const normalGravity = { x: normalGravityX, y: normalGravityY };
-      return [
+    function pulseGravity(x, y, duration = 1, normalX, normalY) {
+      if (duration < 1) throw Error("Duration must be 1 or more");
+      return (t, cp) => [
+        [t, cp, (_keyframeContext) => ({ x, y })],
         [
-          time,
-          contactPoints,
-          (_keyframeContext) => ({ x: gravityX, y: gravityY }),
-          true,
-        ],
-        [
-          time + duration + 1,
-          contactPoints,
-          (_keyframeContext) => normalGravity,
-          true,
+          t + duration + 1,
+          cp,
+          (_keyframeContext) => ({ x: normalX, y: normalY }),
         ],
       ];
     }
@@ -335,141 +317,187 @@
      * Teleports the rider by applying instantaneous displacement
      * @param {number} deltaX - X displacement
      * @param {number} deltaY - Y displacement
-     * @param {number} normalGravityX - X component of normal gravity to return to (default: 0)
-     * @param {number} normalGravityY - Y component of normal gravity to return to (default: 0.175)
-     * @param {number} time - Frame number to apply teleport
-     * @param {Array} contactPoints - Array of contact point indices (default: all points)
-     * @returns {Array} Keyframe data
+     * @param {number} normalX - X component of normal gravity (default: 0)
+     * @param {number} normalY - Y component of normal gravity (default: 0.175)
+     * @returns {Function} Function (time, contactPoints) => keyframes
      */
-    function teleport(
-      deltaX,
-      deltaY,
-      normalGravityX,
-      normalGravityY,
-      time,
-      contactPoints = all,
-    ) {
-      const normalGravity = {
-        x: normalGravityX !== undefined ? normalGravityX : 0,
-        y: normalGravityY !== undefined ? normalGravityY : 0.175,
-      };
-      return [
+    function teleport(dx, dy, normalX = 0, normalY = 0.175) {
+      return (t, cp) => [
         [
-          time,
-          contactPoints,
+          t,
+          cp,
           (ctx) => ({
-            x: deltaX,
-            y: deltaY,
+            x: dx,
+            y: dy,
           }),
           true,
         ],
-        [time + 1, contactPoints, (ctx) => ({ x: -deltaX, y: -deltaY }), true],
-        [time + 2, contactPoints, (_ctx) => normalGravity, true],
+        [t + 1, cp, (ctx) => ({ x: -dx, y: -dy })],
+        [t + 2, cp, (_ctx) => ({ x: normalX, y: normalY })],
       ];
     }
 
     /**
-     * Transforms the rider to a target position with optional rotation
+     * Transforms the rider to a target position with optional angle
      * @param {number} anchorPoint - Contact point to use as anchor (0-16)
      * @param {number} positionX - Target X position
      * @param {number} positionY - Target Y position
      * @param {boolean} isAbsolute - Whether position is absolute (true) or relative (false)
-     * @param {Object} shape - Shape configuration object (default: DefaultShape)
-     * @param {number} rotation - Rotation angle in degrees
+     * @param {Object} pose - Pose configuration object (default: DefaultPose)
+     * @param {number} angle - Rotation angle in degrees
      * @param {number} normalGravityX - X component of normal gravity to return to (default: 0)
      * @param {number} normalGravityY - Y component of normal gravity to return to (default: 0.175)
-     * @param {number} time - Frame number to apply transformation
-     * @param {Array} contactPoints - Array of contact point indices (default: all points)
      * @returns {Array} Keyframe data
      */
-    function transformRider(
-      anchorPoint,
-      positionX,
-      positionY,
-      isAbsolute,
-      shape,
-      rotation,
-      normalGravityX,
-      normalGravityY,
-      time,
-      contactPoints = all,
-    ) {
-      const position = { x: positionX, y: positionY };
-      const normalGravity = {
-        x: normalGravityX !== undefined ? normalGravityX : 0,
-        y: normalGravityY !== undefined ? normalGravityY : 0.175,
-      };
-      return [
-        [
-          time,
-          contactPoints,
-          (keyframeContext) => {
-            const targetPos = calculateTargetPosition({
-              contactPoint: keyframeContext.contactPoint,
-              anchorPoint,
-              targetPosition: position,
-              isAbsolute,
-              shape,
-              rotation,
-              riderData: keyframeContext.riderData,
-            });
-            const pos = keyframeContext.contactPointData.pos;
+    const adjustRiderFn =
+      (
+        anchorPoint = null,
+        positionX = null,
+        positionY = null,
+        isAbsolute = false,
+        pose = null,
+        angle = 0,
+        normalGravityX = 0,
+        normalGravityY = 0.175,
+      ) =>
+      (t, cp = all) => {
+        const position =
+          positionX !== null && positionY !== null
+            ? { x: positionX, y: positionY }
+            : null;
+        const normalGravity = { x: normalGravityX, y: normalGravityY };
 
-            return {
-              x: targetPos.x - pos.x - keyframeContext.contactPointData.vel.x,
-              y: targetPos.y - pos.y - keyframeContext.contactPointData.vel.y,
-            };
-          },
-          true,
-        ],
-        [
-          time + 1,
-          contactPoints,
-          (keyframeContext) => {
-            const vel = keyframeContext.contactPointData.vel;
-            return { x: -vel.x, y: -vel.y };
-          },
-          true,
-        ],
-        [time + 2, contactPoints, (_keyframeContext) => normalGravity, true],
-      ];
+        return [
+          [
+            t,
+            cp,
+            (keyframeContext) => {
+              const targetPos = calculateTargetPosition({
+                contactPoint: keyframeContext.contactPoint,
+                anchorPoint,
+                targetPosition: position,
+                isAbsolute,
+                pose,
+                angle,
+                riderData: keyframeContext.riderData,
+              });
+              const pos = keyframeContext.contactPointData.pos;
+
+              return {
+                x: targetPos.x - pos.x - keyframeContext.contactPointData.vel.x,
+                y: targetPos.y - pos.y - keyframeContext.contactPointData.vel.y,
+              };
+            },
+          ],
+          [
+            t + 1,
+            cp,
+            (keyframeContext) => {
+              const vel = keyframeContext.contactPointData.vel;
+              return { x: -vel.x, y: -vel.y };
+            },
+          ],
+          [t + 2, cp, (_keyframeContext) => normalGravity],
+        ];
+      };
+
+    function adjustRider() {
+      const state = {
+        anchorPoint: null,
+        positionX: null,
+        positionY: null,
+        isAbsolute: false,
+        pose: null,
+        rotation: 0,
+        normalGravityX: 0,
+        normalGravityY: 0.175,
+      };
+
+      const call = (t, cp) => {
+        const fn = adjustRiderFn(
+          state.anchorPoint,
+          state.positionX,
+          state.positionY,
+          state.isAbsolute,
+          state.pose,
+          state.rotation,
+          state.normalGravityX,
+          state.normalGravityY,
+        );
+        return fn(t, cp);
+      };
+
+      call.pose = (p) => {
+        state.pose = p;
+        return call;
+      };
+      call.angle = (deg) => {
+        state.rotation = deg;
+        return call;
+      };
+      call.x = (px) => {
+        state.positionX = px;
+        return call;
+      };
+      call.y = (py) => {
+        state.positionY = py;
+        return call;
+      };
+      call.pos = (px, py) => {
+        state.positionX = px;
+        state.positionY = py;
+        return call;
+      };
+      call.absolute = () => {
+        state.isAbsolute = true;
+        return call;
+      };
+      call.relative = () => {
+        state.isAbsolute = false;
+        return call;
+      };
+      call.anchor = (idx) => {
+        state.anchorPoint = idx;
+        return call;
+      };
+      call.gravity = (nx, ny) => {
+        state.normalGravityX = nx;
+        state.normalGravityY = ny;
+        return call;
+      };
+
+      return call;
     }
 
-    function lockToAxisFn(
-      { x = null, y = null },
-      maxForce,
-      duration,
-      startFrame,
-      contactPoints,
-    ) {
-      const keyframes = [];
-      for (let i = 0; i < duration; i++) {
+    function lockToAxisFn(x, y, maxForce, duration) {
+      return (startFrame, contactPoints) => {
+        const keyframes = [];
+        for (let i = 0; i < duration; i++) {
+          keyframes.push([
+            startFrame + i,
+            contactPoints,
+            (keyframeContext) => {
+              const pos = keyframeContext.contactPointData.pos;
+              let force = { x: 0, y: 0 };
+              if (x !== null) {
+                const dx = x - pos.x;
+                force.x = Math.max(-maxForce, Math.min(maxForce, dx));
+              }
+              if (y !== null) {
+                const dy = y - pos.y;
+                force.y = Math.max(-maxForce, Math.min(maxForce, dy));
+              }
+              return force;
+            },
+          ]);
+        }
         keyframes.push([
-          startFrame + i,
+          startFrame + duration,
           contactPoints,
-          (keyframeContext) => {
-            const pos = keyframeContext.contactPointData.pos;
-            let force = { x: 0, y: 0 };
-            if (x !== null) {
-              const dx = x - pos.x;
-              force.x = Math.max(-maxForce, Math.min(maxForce, dx));
-            }
-            if (y !== null) {
-              const dy = y - pos.y;
-              force.y = Math.max(-maxForce, Math.min(maxForce, dy));
-            }
-            return force;
-          },
-          true,
+          (keyframeContext) => keyframeContext.lastGravity,
         ]);
-      }
-      keyframes.push([
-        startFrame + duration,
-        contactPoints,
-        (keyframeContext) => keyframeContext.lastGravity,
-        true,
-      ]);
-      return keyframes;
+        return keyframes;
+      };
     }
 
     /**
@@ -478,18 +506,10 @@
      * @param {number|null} axisY - Y axis position to lock to (null to ignore Y)
      * @param {number} maxForce - Maximum force to apply for locking
      * @param {number} duration - Duration in frames to maintain lock
-     * @param {number} time - Frame number to start locking
-     * @param {Array} contactPoints - Array of contact point indices
      * @returns {Array} Keyframe data
      */
-    function lockToAxis(axisX, axisY, maxForce, duration, time, contactPoints) {
-      return lockToAxisFn(
-        { x: axisX, y: axisY },
-        maxForce,
-        duration,
-        time,
-        contactPoints,
-      );
+    function lockToAxis(axisX, axisY, maxForce, duration) {
+      return lockToAxisFn(axisX, axisY, maxForce, duration);
     }
 
     /**
@@ -599,13 +619,16 @@
       const currentIndex = store.getState().player.index;
       store.dispatch({ type: "SET_PLAYER_INDEX", payload: 0 });
       requestAnimationFrame(() =>
-        store.dispatch({ type: "SET_PLAYER_INDEX", payload: currentIndex }),
+        store.dispatch({
+          type: "SET_PLAYER_INDEX",
+          payload: currentIndex,
+        }),
       );
       window.allGravityKeyframes = processedKeyframes
         .flat()
         .sort((a, b) => a[0] - b[0]);
 
-      this.triggerSubscriberHack();
+      triggerSubscriberHack();
     }
 
     /**
@@ -677,34 +700,70 @@
       });
     }
 
-    const KeyframeFns = {
-      pulseGravity,
-      lockToAxis,
-      transformRider,
-      teleport,
-    };
+    function help() {
+      return `
+				Keyframes:
+					[
+					t,
+					contactPointArray,
+					effectFn,
+					optionalInterval
+					]
 
-    const Shapes = {
-      DefaultShape,
-      KramualShape,
+				Keyframe with interval:
+					[ t, [cp0, cp1, ..., cp16, cp0', cp1', ..., cp16', ...], effectFn, interval ]
+
+					Here, the contact points are grouped by rider in blocks of 17.
+
+					- With interval = 40:
+					  At frame t: effect applies to Rider 1 (its 17 contact points)
+					  At frame t + 40: effect applies to Rider 2 (its 17 contact points)
+					  At frame t + 80: effect applies to Rider 3 (its 17 contact points)
+					  ...and so on
+
+					- With interval = 0 (or omitted):
+					  At frame t: effect applies to all riders simultaneously (each rider’s 17 contact points)
+
+				Effect functions:
+					- setGravity(x, y)
+
+					- pulseGravity(x, y, duration, normalX = 0, normalY = 0.175)
+					  Applies a temporary gravity pulse (x, y) for 'duration' frames, then restores
+					  to fallback/end gravity defined by (normalX, normalY).
+
+					- teleport(dx, dy, normalX = 0, normalY = 0.175)
+					  Instantly displaces by (dx, dy), applies inverse correction next frame,
+					  then restores to fallback/end gravity (normalX, normalY).
+
+					- lockToAxis({ x = null, y = null }, maxForce, duration, startFrame, contactPoints)
+					  Pulls each frame toward x and/or y with clamped force, then restores to the rider’s last gravity.
+
+					- adjustRider()
+					  Returns a chainable builder that produces a function (t, cp) => keyframes.
+					  Example: adjustRider().pose(Poses.kramual).angle(90).x(100).relative()(t, cp)
+
+
+
+			`.trim();
+    }
+
+    const Poses = {
+      default: DefaultPose,
+      kramual: KramualPose,
     };
 
     return {
-      applyGravity,
       setGravityKeyframes,
-      triggerSubscriberHack,
-      KeyframeFns,
       Intervals,
-      Shapes,
-      ContactPoints,
-      PointGroups,
+      Poses,
 
       // Gravity functions
-      lockToAxis,
-      transformRider,
-      teleport,
-      pulseGravity,
       setGravity,
+      pulseGravity,
+      teleport,
+      lockToAxis,
+      adjustRider,
+      help,
     };
   })();
 

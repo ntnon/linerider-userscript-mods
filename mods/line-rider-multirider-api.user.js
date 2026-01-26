@@ -163,25 +163,30 @@
    * Extends Array so it can be used directly without .create()
    */
   class RiderRepeater extends Array {
-    constructor(groups, count, baseRider = null) {
+    constructor(baseRider, count, groups) {
       super();
-      this._groupName = groups;
+      this._baseRider = baseRider;
       this._count = count;
+      this._groupName = groups;
 
       // Use baseRider if provided, otherwise create default riders
       const template = baseRider || makeRider(groups, 0, 0, 0, 0, 0, true);
 
       // Create riders immediately based on template
       for (let i = 0; i < count; i++) {
-        this.push(template.copy());
+        const copy = template.copy();
+        // Override groups if specified
+        if (groups) {
+          const groupSet =
+            groups instanceof Set
+              ? new Set(groups)
+              : new Set(Array.isArray(groups) ? groups : [groups]);
+          copy.groups = groupSet;
+        }
+        this.push(copy);
       }
     }
 
-    /**
-     * Modify x position for each rider
-     * @param {Function} fn - Function(x, index) => number
-     * @returns {RiderRepeater} this for chaining
-     */
     x(fn) {
       this.forEach((rider, i) => {
         rider.startPosition.x = fn(rider.startPosition.x, i);
@@ -189,11 +194,6 @@
       return this;
     }
 
-    /**
-     * Modify y position for each rider
-     * @param {Function} fn - Function(y, index) => number
-     * @returns {RiderRepeater} this for chaining
-     */
     y(fn) {
       this.forEach((rider, i) => {
         rider.startPosition.y = fn(rider.startPosition.y, i);
@@ -201,11 +201,6 @@
       return this;
     }
 
-    /**
-     * Modify x velocity for each rider
-     * @param {Function} fn - Function(vx, index) => number
-     * @returns {RiderRepeater} this for chaining
-     */
     vx(fn) {
       this.forEach((rider, i) => {
         rider.startVelocity.x = fn(rider.startVelocity.x, i);
@@ -213,11 +208,6 @@
       return this;
     }
 
-    /**
-     * Modify y velocity for each rider
-     * @param {Function} fn - Function(vy, index) => number
-     * @returns {RiderRepeater} this for chaining
-     */
     vy(fn) {
       this.forEach((rider, i) => {
         rider.startVelocity.y = fn(rider.startVelocity.y, i);
@@ -225,11 +215,6 @@
       return this;
     }
 
-    /**
-     * Modify angle for each rider
-     * @param {Function} fn - Function(angle, index) => number
-     * @returns {RiderRepeater} this for chaining
-     */
     angle(fn) {
       this.forEach((rider, i) => {
         rider.startAngle = fn(rider.startAngle, i);
@@ -237,11 +222,6 @@
       return this;
     }
 
-    /**
-     * Modify remountable for each rider
-     * @param {Function} fn - Function(remountable, index) => boolean
-     * @returns {RiderRepeater} this for chaining
-     */
     remountable(fn) {
       this.forEach((rider, i) => {
         rider.remountable = fn(rider.remountable, i);
@@ -249,11 +229,6 @@
       return this;
     }
 
-    /**
-     * Modify groups for each rider
-     * @param {Function} fn - Function(groups, index) => Set
-     * @returns {RiderRepeater} this for chaining
-     */
     group(fn) {
       this.forEach((rider, i) => {
         rider.groups = fn(rider.groups, i);
@@ -261,35 +236,18 @@
       return this;
     }
 
-    /**
-     * Helper: Arrange riders in a circle
-     * @param {number} radius - Circle radius
-     * @returns {RiderRepeater} this for chaining
-     */
     circle(radius) {
       return this.x(
         (x, i) => Math.cos((i / this._count) * Math.PI * 2) * radius,
       ).y((y, i) => Math.sin((i / this._count) * Math.PI * 2) * radius);
     }
 
-    /**
-     * Helper: Arrange riders in a grid
-     * @param {number} cols - Number of columns
-     *L @param {number} spacing - Spacing between riders
-     * @returns {RiderRepeater} this for chaining
-     */
     grid(cols, spacing) {
       return this.x((x, i) => (i % cols) * spacing).y(
         (y, i) => Math.floor(i / cols) * spacing,
       );
     }
 
-    /**
-     * Helper: Arrange riders in a line
-     * @param {number} spacing - Spacing between riders
-     * @param {string} direction - 'horizontal' or 'vertical'
-     * @returns {RiderRepeater} this for chaining
-     */
     line(spacing, direction = "horizontal") {
       if (direction === "horizontal") {
         return this.x((x, i) => i * spacing);
@@ -297,6 +255,10 @@
         return this.y((y, i) => i * spacing);
       }
     }
+  }
+
+  function repeatRider(baseRider, count, groups) {
+    return new RiderRepeater(baseRider, count, groups);
   }
 
   const MultiRiderAPI = (() => {
@@ -336,7 +298,7 @@
     }
 
     /**
-     * Creates a new rider with specified groups and properties
+     * Creates a new rider with chainable property setters
      * @param {string|Array|Set} groups - Group name(s) for the rider
      * @param {number} startPosX - Starting X position (default: 0)
      * @param {number} startPosY - Starting Y position (default: 0)
@@ -344,7 +306,7 @@
      * @param {number} startVelY - Starting Y velocity (default: 0)
      * @param {number} startAngle - Starting angle in degrees (default: 0)
      * @param {boolean} remountable - Whether rider can remount (default: true)
-     * @returns {Object} Rider object with copy() method
+     * @returns {Object} Chainable rider object
      */
     function makeRider(
       groups,
@@ -360,12 +322,71 @@
         groups instanceof Set
           ? new Set(groups)
           : new Set(Array.isArray(groups) ? groups : [groups]);
-      return {
+
+      const rider = {
         groups: groupSet,
         startPosition: { x: startPosX, y: startPosY },
         startVelocity: { x: startVelX, y: startVelY },
         startAngle: startAngle,
         remountable: remountable,
+
+        // Chainable setters
+        x(value) {
+          this.startPosition.x = value;
+          return this;
+        },
+
+        y(value) {
+          this.startPosition.y = value;
+          return this;
+        },
+
+        vx(value) {
+          this.startVelocity.x = value;
+          return this;
+        },
+
+        vy(value) {
+          this.startVelocity.y = value;
+          return this;
+        },
+
+        pos(x, y) {
+          this.startPosition.x = x;
+          this.startPosition.y = y;
+          return this;
+        },
+
+        vel(vx, vy) {
+          this.startVelocity.x = vx;
+          this.startVelocity.y = vy;
+          return this;
+        },
+
+        angle(value) {
+          this.startAngle = value;
+          return this;
+        },
+
+        setRemountable(value) {
+          this.remountable = value;
+          return this;
+        },
+
+        addGroup(groupName) {
+          if (Array.isArray(groupName)) {
+            groupName.forEach((g) => this.groups.add(g));
+          } else {
+            this.groups.add(groupName);
+          }
+          return this;
+        },
+
+        removeGroup(groupName) {
+          this.groups.delete(groupName);
+          return this;
+        },
+
         copy() {
           return makeRider(
             new Set(this.groups),
@@ -378,17 +399,19 @@
           );
         },
       };
+
+      return rider;
     }
 
     /**
      * Creates multiple riders with chainable modifiers
-     * @param {string|Array|Set} groups - Group name(s) for the riders
-     * @param {number} count - Number of riders to create
      * @param {Object} baseRider - Optional base rider to copy from
+     * @param {number} count - Number of riders to create
+     * @param {string|Array|Set} groups - Group name(s) for the riders
      * @returns {RiderRepeater} Chainable array of riders
      */
-    function repeatRider(groups, count, baseRider = null) {
-      return new RiderRepeater(groups, count, baseRider);
+    function repeatRider(baseRider, count, groups) {
+      return new RiderRepeater(baseRider, count, groups);
     }
 
     /**
@@ -471,7 +494,6 @@ CREATING RIDERS:
     - groups: Group name(s) for the riders
     - count: Number of riders to create
     - baseRider: Optional rider template (default: rider at origin)
-    - Returns array that IS the riders (no .create() needed!)
 
     Chainable methods:
       .x(fn)      - Modify x position: (x, index) => number

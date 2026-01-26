@@ -598,15 +598,23 @@
     };
 
     /**
-     * Locks contact points to specific axis positions using bounded force with optional tweening
+     * Locks contact points to specific axis positions using damped spring physics
      * @param {number|null} x - X axis position to lock to (null to ignore X)
      * @param {number|null} y - Y axis position to lock to (null to ignore Y)
-     * @param {number} maxForce - Maximum force to apply for locking
+     * @param {number} maxForce - Maximum spring force (proportional gain)
      * @param {number} duration - Duration in frames to maintain lock
-     * @param {Function} tweenFn - Tweening function (default: Tween.none for constant force)
+     * @param {Function} tweenFn - Tweening function that modulates spring strength (default: Tween.none)
+     * @param {number} damping - Damping coefficient (0-1). Higher = more damping. (default: 0.5)
      * @returns {Function} Function (startFrame, contactPoints) => keyframes
      */
-    function lockToAxisFn(x, y, maxForce, duration, tweenFn = Tween.none) {
+    function lockToAxisFn(
+      x,
+      y,
+      maxForce,
+      duration,
+      tweenFn = Tween.none,
+      damping = 0.5,
+    ) {
       return (startFrame, contactPoints) => {
         const keyframes = [];
         for (let i = 0; i < duration; i++) {
@@ -615,17 +623,42 @@
             contactPoints,
             (keyframeContext) => {
               const pos = keyframeContext.contactPointData.pos;
+              const vel = keyframeContext.contactPointData.vel;
               const t = i / Math.max(duration - 1, 1); // Normalize time to 0-1
-              const tweenedForce = tweenFn(t) * maxForce;
+              const springStrength = tweenFn(t); // 0-1 multiplier for spring force
+
               let force = { x: 0, y: 0 };
+
+              // X-axis: Spring force toward target + velocity damping
               if (x !== null) {
-                const dx = x - pos.x;
-                force.x = Math.max(-tweenedForce, Math.min(tweenedForce, dx));
+                const dx = x - pos.x; // Displacement from target
+                const springForce =
+                  springStrength *
+                  maxForce *
+                  Math.sign(dx) *
+                  Math.min(Math.abs(dx), 1);
+                const dampingForce = -damping * maxForce * vel.x;
+                force.x = Math.max(
+                  -maxForce,
+                  Math.min(maxForce, springForce + dampingForce),
+                );
               }
+
+              // Y-axis: Spring force toward target + velocity damping
               if (y !== null) {
-                const dy = y - pos.y;
-                force.y = Math.max(-tweenedForce, Math.min(tweenedForce, dy));
+                const dy = y - pos.y; // Displacement from target
+                const springForce =
+                  springStrength *
+                  maxForce *
+                  Math.sign(dy) *
+                  Math.min(Math.abs(dy), 1);
+                const dampingForce = -damping * maxForce * vel.y;
+                force.y = Math.max(
+                  -maxForce,
+                  Math.min(maxForce, springForce + dampingForce),
+                );
               }
+
               return force;
             },
           ]);
@@ -633,36 +666,40 @@
         keyframes.push([
           startFrame + duration,
           contactPoints,
-          (keyframeContext) => keyframeContext.lastGravity,
+          (keyframeContext) => ({
+            x: keyframeContext.lastDefaultGravity?.x ?? 0,
+            y: keyframeContext.lastDefaultGravity?.y ?? 0.175,
+          }),
         ]);
         return keyframes;
       };
     }
 
     /**
-     * Locks contact points to specific axis positions using bounded force
+     * Locks contact points to specific axis positions using damped spring physics
      * @param {number|null} axisX - X axis position to lock to (null to ignore X)
      * @param {number|null} axisY - Y axis position to lock to (null to ignore Y)
-     * @param {number} maxForce - Maximum force to apply for locking
+     * @param {number} maxForce - Maximum spring force to apply
      * @param {number} duration - Duration in frames to maintain lock
-     * @param {Function} tweenFn - Optional tweening function (default: Tween.none)
+     * @param {Function} tweenFn - Optional tweening function that modulates spring strength (default: Tween.none)
+     * @param {number} damping - Optional damping coefficient 0-1 (default: 0.5). Higher = more damping, less overshoot
      * @returns {Function} Keyframe generator function
      *
      * @example
-     * // Lock to Y=100 with constant force
+     * // Lock to Y=100 with constant spring force and default damping
      * applyGravity([0, 1, 0], all, lockToAxis(null, 100, 2, 40));
      *
      * @example
-     * // Lock to X=50 with ease-out (starts strong, ends gentle)
+     * // Lock to X=50 with ease-out (strong spring at start, gentle at end)
      * applyGravity([0, 1, 0], all, lockToAxis(50, null, 3, 60, Tween.easeOutQuad));
      *
      * @example
-     * // Lock to position (100, 200) with ease-in-out for smooth motion
-     * applyGravity([0, 1, 0], all, lockToAxis(100, 200, 2, 80, Tween.easeInOutCubic));
+     * // Lock to position (100, 200) with custom damping to prevent overshoot
+     * applyGravity([0, 1, 0], all, lockToAxis(100, 200, 2, 80, Tween.none, 0.8));
      *
      * @example
-     * // Linear increase in force over time
-     * applyGravity([0, 1, 0], all, lockToAxis(0, 0, 5, 100, Tween.linear));
+     * // Linear increase in spring strength over time with light damping
+     * applyGravity([0, 1, 0], all, lockToAxis(0, 0, 5, 100, Tween.linear, 0.3));
      */
     function lockToAxis(
       axisX,
@@ -670,8 +707,9 @@
       maxForce,
       duration,
       tweenFn = Tween.none,
+      damping = 0.5,
     ) {
-      return lockToAxisFn(axisX, axisY, maxForce, duration, tweenFn);
+      return lockToAxisFn(axisX, axisY, maxForce, duration, tweenFn, damping);
     }
 
     /**
@@ -797,17 +835,26 @@
         return item;
       });
 
-      // Clear Cache
-      window.store.getState().camera.playbackFollower._frames.length = 0;
-      window.store.getState().simulator.engine.engine._computed._frames.length = 1;
-      const currentIndex = store.getState().player.index;
+      // Clear Cache - safely reset to avoid camera frame errors
+      const state = window.store.getState();
+      const currentIndex = state.player.index;
+
+      // Reset to frame 0 first to allow safe cache clearing
       store.dispatch({ type: "SET_PLAYER_INDEX", payload: 0 });
-      requestAnimationFrame(() =>
-        store.dispatch({
-          type: "SET_PLAYER_INDEX",
-          payload: currentIndex,
-        }),
-      );
+
+      // Clear caches after resetting to frame 0
+      requestAnimationFrame(() => {
+        state.camera.playbackFollower._frames.length = 0;
+        state.simulator.engine.engine._computed._frames.length = 1;
+
+        // Return to original position after cache is cleared
+        requestAnimationFrame(() =>
+          store.dispatch({
+            type: "SET_PLAYER_INDEX",
+            payload: currentIndex,
+          }),
+        );
+      });
       window.allGravityKeyframes = processedKeyframes
         .flat()
         .sort((a, b) => a[0] - b[0]);
@@ -919,8 +966,10 @@
 					  Instantly displaces by (dx, dy), applies inverse correction next frame,
 					  then restores to fallback/end gravity (normalX, normalY).
 
-					- lockToAxis(x = null, y = null, maxForce, duration, tweenFn = Tween.none)
-					  Pulls each frame toward x and/or y with clamped force, with optional tweening.
+					- lockToAxis(x = null, y = null, maxForce, duration, tweenFn = Tween.none, damping = 0.5)
+					  Uses damped spring physics to lock contact points to target position.
+					  Spring force pulls toward target, damping prevents overshoot.
+					  Tween function modulates spring strength over time.
 					  Returns to the rider's last gravity after duration.
 
 					- adjustRider()

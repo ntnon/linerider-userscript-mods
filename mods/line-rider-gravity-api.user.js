@@ -1163,12 +1163,38 @@
     function triggerSubscriberHack() {
       Object.defineProperty(window.$ENGINE_PARAMS, "gravity", {
         get() {
-          const frameIndex =
-            store.getState().simulator.engine.engine._computed._frames.length;
+          // Initialize frame cache on first access
+          if (!window.__gravityFrameCache) {
+            window.__gravityFrameCache = {
+              frameIndex: -1,
+              engine: null,
+              riders: null,
+              frameData: null,
+              previousFrameData: null,
+              gravityResults: {},
+            };
+          }
 
-          const riders =
-            store.getState().simulator.engine.engine.state.riders || [];
-          const numRiders = riders.length;
+          const cache = window.__gravityFrameCache;
+
+          // Get frame index (first store access - unavoidable)
+          const state = store.getState();
+          const engine = state.simulator.engine.engine;
+          const frameIndex = engine._computed._frames.length;
+
+          // Check if we need to refresh the cache for a new frame
+          if (cache.frameIndex !== frameIndex) {
+            // New frame - reset cache
+            cache.frameIndex = frameIndex;
+            cache.engine = engine;
+            cache.riders = engine.state.riders || [];
+            cache.frameData = engine.getFrame(frameIndex - 1);
+            cache.previousFrameData =
+              frameIndex >= 2 ? engine.getFrame(frameIndex - 2) : null;
+            cache.gravityResults = {}; // Clear gravity results cache
+          }
+
+          const numRiders = cache.riders.length;
           if (numRiders === 0) {
             return DEFAULT_GRAVITY;
           }
@@ -1181,34 +1207,37 @@
             Math.floor((globalIteration - 1) / iterationsPerRider) % numRiders;
           const currentContactPoint =
             (globalIteration - 1) % iterationsPerRider;
-
+          if (currentContactPoint > 9) {
+            // ignore gravity for scarf
+            return DEFAULT_GRAVITY;
+          }
           const globalCpIndex = currentRiderIndex * 17 + currentContactPoint;
+
+          // Check if we already computed gravity for this contact point this frame
+          if (cache.gravityResults[globalCpIndex] !== undefined) {
+            return cache.gravityResults[globalCpIndex];
+          }
 
           const allKeyframes = window.allGravityKeyframes || [];
           const riderIndex = Math.floor(globalCpIndex / 17);
           const contactPoint = globalCpIndex % 17;
-          const frameData = store
-            .getState()
-            .simulator.engine.engine.getFrame(frameIndex - 1);
+
+          // Use cached frame data
           const riderData =
-            frameData?.snapshot?.entities?.[0]?.entities?.[riderIndex];
+            cache.frameData?.snapshot?.entities?.[0]?.entities?.[riderIndex];
           const contactPointData = riderData?.points?.[contactPoint];
-          let previousFrameData = null;
           let previousRiderData = null;
           let previousContactPointData = null;
-          if (frameIndex >= 2) {
-            previousFrameData = store
-              .getState()
-              .simulator.engine.engine.getFrame(frameIndex - 2);
+
+          if (cache.previousFrameData) {
             previousRiderData =
-              previousFrameData.frameData?.snapshot?.entities?.[0]?.entities?.[
-                riderIndex
-              ];
+              cache.previousFrameData.frameData?.snapshot?.entities?.[0]
+                ?.entities?.[riderIndex];
             previousContactPointData =
               previousRiderData?.points?.[contactPoint];
           }
 
-          return getGravityForContactPoint({
+          const result = getGravityForContactPoint({
             keyframes: allKeyframes,
             frameIndex,
             globalCpIndex,
@@ -1216,11 +1245,16 @@
               contactPoint,
               riderData,
               contactPointData,
-              previousFrameData,
+              previousFrameData: cache.previousFrameData,
               previousRiderData,
               previousContactPointData,
             },
           });
+
+          // Cache the result for this contact point
+          cache.gravityResults[globalCpIndex] = result;
+
+          return result;
         },
       });
     }

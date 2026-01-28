@@ -1066,15 +1066,56 @@
       globalCpIndex,
       context,
     }) {
-      let lastGravity = undefined;
-      let lastDefaultGravity = null;
-      let found = false;
-      for (const [timestamp, cps, gravityFn] of keyframes) {
+      // Initialize gravity state cache per contact point
+      if (!window.__gravityStateCache) {
+        window.__gravityStateCache = {};
+      }
+
+      const stateCache = window.__gravityStateCache;
+      if (!stateCache[globalCpIndex]) {
+        stateCache[globalCpIndex] = {
+          lastProcessedFrame: -1,
+          lastGravity: undefined,
+          lastDefaultGravity: null,
+          nextKeyframeIndex: 0,
+        };
+      }
+
+      const cpState = stateCache[globalCpIndex];
+
+      // Use indexed keyframes for this specific contact point (fast lookup)
+      const contactPointKeyframes =
+        window.__keyframesByContactPoint?.[globalCpIndex] || [];
+
+      // Detect timeline scrubbing/rewinding - reset cache if we went backwards
+      if (frameIndex < cpState.lastProcessedFrame) {
+        cpState.lastProcessedFrame = -1;
+        cpState.lastGravity = undefined;
+        cpState.lastDefaultGravity = null;
+        cpState.nextKeyframeIndex = 0;
+      }
+
+      // Only process new keyframes since last frame
+      let found = cpState.lastGravity !== undefined;
+      let lastGravity = cpState.lastGravity;
+      let lastDefaultGravity = cpState.lastDefaultGravity;
+
+      // Start from where we left off, not from the beginning
+      for (
+        let i = cpState.nextKeyframeIndex;
+        i < contactPointKeyframes.length;
+        i++
+      ) {
+        const [timestamp, gravityFn] = contactPointKeyframes[i];
         const frame = Array.isArray(timestamp)
           ? timestampToFrames(timestamp)
           : timestamp;
-        if (frame > frameIndex) break;
-        if (!cps.includes(globalCpIndex)) continue;
+
+        if (frame > frameIndex) {
+          // Haven't reached this keyframe yet, stop here
+          cpState.nextKeyframeIndex = i;
+          break;
+        }
 
         lastGravity = gravityFn({
           ...context,
@@ -1095,13 +1136,23 @@
           console.error("  Frame:", frameIndex);
           console.error("  Contact Point Index:", globalCpIndex);
           console.error("  Timestamp:", timestamp);
-          console.error("  Contact Points:", cps);
           console.error("  Result:", lastGravity);
           console.error("  Gravity Function:", gravityFn);
         }
 
         found = true;
+
+        // If this is the last keyframe or we've reached the end, mark it
+        if (i === contactPointKeyframes.length - 1) {
+          cpState.nextKeyframeIndex = i + 1;
+        }
       }
+
+      // Update cache for next frame
+      cpState.lastProcessedFrame = frameIndex;
+      cpState.lastGravity = lastGravity;
+      cpState.lastDefaultGravity = lastDefaultGravity;
+
       if (!found) {
         throw new Error(
           'No gravity keyframe found. Please begin your gravity keyframes with "setGravityKeyframes" that targets all contact points.',
@@ -1153,6 +1204,23 @@
         .flat()
         .sort((a, b) => a[0] - b[0]);
 
+      // Build indexed map of keyframes by contact point for fast lookup
+      window.__keyframesByContactPoint = {};
+      for (const [timestamp, cps, gravityFn] of window.allGravityKeyframes) {
+        for (const cpIndex of cps) {
+          if (!window.__keyframesByContactPoint[cpIndex]) {
+            window.__keyframesByContactPoint[cpIndex] = [];
+          }
+          window.__keyframesByContactPoint[cpIndex].push([
+            timestamp,
+            gravityFn,
+          ]);
+        }
+      }
+
+      // Reset gravity state cache when keyframes change
+      window.__gravityStateCache = {};
+
       triggerSubscriberHack();
     }
 
@@ -1172,6 +1240,8 @@
               frameData: null,
               previousFrameData: null,
               gravityResults: {},
+              riderEntities: null,
+              previousRiderEntities: null,
             };
           }
 
@@ -1192,6 +1262,13 @@
             cache.previousFrameData =
               frameIndex >= 2 ? engine.getFrame(frameIndex - 2) : null;
             cache.gravityResults = {}; // Clear gravity results cache
+
+            // Pre-extract deep object paths to avoid repeated traversal
+            cache.riderEntities =
+              cache.frameData?.snapshot?.entities?.[0]?.entities || [];
+            cache.previousRiderEntities =
+              cache.previousFrameData?.frameData?.snapshot?.entities?.[0]
+                ?.entities || [];
           }
 
           const numRiders = cache.riders.length;
@@ -1222,20 +1299,12 @@
           const riderIndex = Math.floor(globalCpIndex / 17);
           const contactPoint = globalCpIndex % 17;
 
-          // Use cached frame data
-          const riderData =
-            cache.frameData?.snapshot?.entities?.[0]?.entities?.[riderIndex];
+          // Use pre-extracted cached entities (eliminates deep traversal)
+          const riderData = cache.riderEntities[riderIndex];
           const contactPointData = riderData?.points?.[contactPoint];
-          let previousRiderData = null;
-          let previousContactPointData = null;
-
-          if (cache.previousFrameData) {
-            previousRiderData =
-              cache.previousFrameData.frameData?.snapshot?.entities?.[0]
-                ?.entities?.[riderIndex];
-            previousContactPointData =
-              previousRiderData?.points?.[contactPoint];
-          }
+          const previousRiderData = cache.previousRiderEntities[riderIndex];
+          const previousContactPointData =
+            previousRiderData?.points?.[contactPoint];
 
           const result = getGravityForContactPoint({
             keyframes: allKeyframes,

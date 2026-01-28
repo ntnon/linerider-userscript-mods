@@ -1284,10 +1284,7 @@
             Math.floor((globalIteration - 1) / iterationsPerRider) % numRiders;
           const currentContactPoint =
             (globalIteration - 1) % iterationsPerRider;
-          if (currentContactPoint > 9) {
-            // ignore gravity for scarf
-            return DEFAULT_GRAVITY;
-          }
+
           const globalCpIndex = currentRiderIndex * 17 + currentContactPoint;
 
           // Check if we already computed gravity for this contact point this frame

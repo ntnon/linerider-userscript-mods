@@ -266,8 +266,7 @@
         );
 
       const timeAsFrames = timestampToFrames(baseTimestamp);
-      const groupSize = 17;
-      const numGroups = Math.ceil(contactPoints.length / groupSize);
+      const contactPointsPerRider = 17;
 
       const validate = (keyframes) => {
         console.log("Validating keyframes:", keyframes);
@@ -277,9 +276,19 @@
         );
       };
 
-      const needsGrouping = Array.from({ length: numGroups }, (_, i) =>
-        intervalFn(i),
-      ).some(Boolean);
+      // Group contact points by rider index (cp / 17)
+      const riderGroups = new Map();
+      for (const cp of contactPoints) {
+        const riderIndex = Math.floor(cp / contactPointsPerRider);
+        if (!riderGroups.has(riderIndex)) {
+          riderGroups.set(riderIndex, []);
+        }
+        riderGroups.get(riderIndex).push(cp);
+      }
+
+      // Check if any groups need staggering
+      const riderIndices = Array.from(riderGroups.keys()).sort((a, b) => a - b);
+      const needsGrouping = riderIndices.some((_, i) => intervalFn(i) !== 0);
 
       if (!needsGrouping) {
         const keyframes = keyframeFn(timeAsFrames, contactPoints);
@@ -288,15 +297,20 @@
         return keyframes;
       }
 
-      return Array.from({ length: numGroups }, (_, i) => {
-        const group = contactPoints.slice(i * groupSize, (i + 1) * groupSize);
-        const t = timeAsFrames + intervalFn(i);
-        const keyframes = keyframeFn(t, group);
-        if (!validate(keyframes))
-          throw new Error("Keyframe must be [time, contactPoints, effect]");
-        return keyframes;
-      }).flat();
-    }
+      // Apply stagger per rider group
+      return riderIndices
+        .map((riderIndex, i) => {
+          const group = riderGroups.get(riderIndex);
+          const t = timeAsFrames + intervalFn(i);
+          const keyframes = keyframeFn(t, group);
+          if (!validate(keyframes))
+            throw new Error("Keyframe must be [time, contactPoints, effect]");
+          return keyframes;
+        })
+        .flat();
+Array.from({ length: numGroups }, (_, i) => {
+        const groupctPoints.slice(i * groupSize, (i + 1) * groupSize);
+        const t = timeAsFram    }
 
     /**
      * Sets constant gravity

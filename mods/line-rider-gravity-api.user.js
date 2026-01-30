@@ -1244,8 +1244,10 @@
         }
       }
 
-      // Reset gravity state cache when keyframes change
+      // Reset all caches when keyframes change
       window.__gravityStateCache = {};
+      window.__gravityFrameCache = undefined;
+      window.__gravityIterationCounter = 0;
 
       triggerSubscriberHack();
     }

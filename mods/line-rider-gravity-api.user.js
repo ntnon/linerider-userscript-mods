@@ -308,9 +308,7 @@
           return keyframes;
         })
         .flat();
-Array.from({ length: numGroups }, (_, i) => {
-        const groupctPoints.slice(i * groupSize, (i + 1) * groupSize);
-        const t = timeAsFram    }
+    }
 
     /**
      * Sets constant gravity
@@ -388,8 +386,9 @@ Array.from({ length: numGroups }, (_, i) => {
      * @param {number} angle - Rotation angle in degrees
      * @param {number} normalGravityX - X component of normal gravity to return to (default: 0)
      * @param {number} normalGravityY - Y component of normal gravity to return to (default: 0.175)
-     * @returns {Array} Keyframe data
-     */
+     /**
+      * @returns {Array} Keyframe data
+      */
     const adjustRiderFn =
       (
         anchorPoint = null,
@@ -400,6 +399,8 @@ Array.from({ length: numGroups }, (_, i) => {
         angle = 0,
         normalGravityX = null,
         normalGravityY = null,
+        velocityX = null,
+        velocityY = null,
       ) =>
       (t, cp = all) => {
         const position =
@@ -434,7 +435,9 @@ Array.from({ length: numGroups }, (_, i) => {
             cp,
             (keyframeContext) => {
               const vel = keyframeContext.contactPointData.vel;
-              return { x: -vel.x, y: -vel.y };
+              const addVelX = velocityX !== null ? velocityX : 0;
+              const addVelY = velocityY !== null ? velocityY : 0;
+              return { x: -vel.x + addVelX, y: -vel.y + addVelY };
             },
           ],
           [
@@ -461,6 +464,8 @@ Array.from({ length: numGroups }, (_, i) => {
         rotation: 0,
         normalGravityX: null,
         normalGravityY: null,
+        velocityX: null,
+        velocityY: null,
       };
 
       const call = (t, cp) => {
@@ -473,6 +478,8 @@ Array.from({ length: numGroups }, (_, i) => {
           state.rotation,
           state.normalGravityX,
           state.normalGravityY,
+          state.velocityX,
+          state.velocityY,
         );
         return fn(t, cp);
       };
@@ -513,6 +520,11 @@ Array.from({ length: numGroups }, (_, i) => {
       call.gravity = (nx, ny) => {
         state.normalGravityX = nx;
         state.normalGravityY = ny;
+        return call;
+      };
+      call.vel = (vx, vy) => {
+        state.velocityX = vx;
+        state.velocityY = vy;
         return call;
       };
 

@@ -29,7 +29,7 @@
  *
  * // Create multiple riders with chainable API
  * addRider(
- *   repeatRider('circle', 20)
+ *   repeatRider(20, 'circle')
  *     .x((x, i) => Math.cos(i * 0.3) * 50)
  *     .y((y, i) => Math.sin(i * 0.3) * 50)
  *     .vx((vx, i) => 0.4)
@@ -163,13 +163,13 @@
    * Extends Array so it can be used directly without .create()
    */
   class RiderRepeater extends Array {
-    constructor(baseRider, count, groups) {
+    constructor(count, groups = null, baseRider = null) {
       super();
       this._baseRider = baseRider;
       this._count = count;
       this._groupName = groups;
 
-      // Use baseRider if provided, otherwise create default riders
+      // Use baseRider if provided, otherwise create default riders with groups
       const template = baseRider || makeRider(groups, 0, 0, 0, 0, 0, true);
 
       // Create riders immediately based on template
@@ -257,11 +257,30 @@
     }
   }
 
-  function repeatRider(baseRider, count, groups) {
-    return new RiderRepeater(baseRider, count, groups);
+  function repeatRider(count, groups = null, baseRider = null) {
+    return new RiderRepeater(count, groups, baseRider);
   }
 
   const MultiRiderAPI = (() => {
+    /**
+     * Resets gravity-related caches when rider configuration changes
+     * @private
+     */
+    function resetGravityCaches() {
+      if (window.__gravityStateCache) {
+        window.__gravityStateCache = {};
+      }
+      if (window.__gravityFrameCache) {
+        window.__gravityFrameCache = undefined;
+      }
+      if (window.__gravityIterationCounter !== undefined) {
+        window.__gravityIterationCounter = 0;
+      }
+      if (window.__keyframesByContactPoint) {
+        window.__keyframesByContactPoint = {};
+      }
+    }
+
     /**
      * Gets all riders currently in the scene
      * @returns {Array} Array of rider objects
@@ -278,6 +297,9 @@
       const ridersArr = Array.isArray(newRiders) ? newRiders : [newRiders];
       window.Actions.setRiders(ridersArr);
       window.Actions.commitTrackChanges();
+
+      // Reset gravity caches when rider count changes
+      resetGravityCaches();
     }
 
     /**
@@ -295,6 +317,7 @@
      */
     function clearRiders() {
       setRiders([]);
+      // Cache reset is handled by setRiders()
     }
 
     /**
@@ -410,8 +433,8 @@
      * @param {string|Array|Set} groups - Group name(s) for the riders
      * @returns {RiderRepeater} Chainable array of riders
      */
-    function repeatRider(baseRider, count, groups) {
-      return new RiderRepeater(baseRider, count, groups);
+    function repeatRider(count, groups = null, baseRider = null) {
+      return new RiderRepeater(count, groups, baseRider);
     }
 
     /**

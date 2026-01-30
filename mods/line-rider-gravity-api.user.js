@@ -814,7 +814,8 @@
      * applyGravity([0, 1, 0], all, snapTo(circleSnap, 2, 40, Tween.none, 0.5, null, 5));
      */
     function snapToFn(
-      closestPointFn,
+      curveFn,
+      parameter,
       maxForce,
       duration,
       tweenFn = Tween.none,
@@ -825,6 +826,8 @@
     ) {
       return (startFrame, contactPoints) => {
         const keyframes = [];
+        const totalRiders = Math.ceil(contactPoints.length / 17);
+
         for (let i = 0; i < duration; i++) {
           keyframes.push([
             startFrame + i,
@@ -835,8 +838,48 @@
               const t = i / Math.max(duration - 1, 1); // Normalize time to 0-1
               const springStrength = tweenFn(t); // 0-1 multiplier for spring force
 
-              // Find closest point on the curve (may include tangent info)
-              const target = closestPointFn(pos);
+              // Determine the parameter value for this rider
+              let paramValue = parameter;
+
+              // Get rider context
+              const riderIndex =
+                keyframeContext.riderIndex ??
+                Math.floor(keyframeContext.globalCpIndex / 17);
+              const numRiders = keyframeContext.numRiders ?? totalRiders;
+              const contactPoint = keyframeContext.contactPoint;
+              const globalCpIndex = keyframeContext.globalCpIndex;
+              const frameIndex = keyframeContext.frameIndex;
+
+              if (parameter === null) {
+                // Nearest point mode
+                paramValue = null;
+              } else if (parameter === "distribute") {
+                // Even distribution for wrapping curves (circles, loops)
+                // Maps riders to: 0/n, 1/n, 2/n, ..., (n-1)/n
+                paramValue = riderIndex / Math.max(numRiders, 1);
+              } else if (parameter === "distribute-span") {
+                // Even distribution spanning full range (for non-wrapping curves)
+                // Maps riders to: 0/(n-1), 1/(n-1), ..., (n-1)/(n-1) = 0, ..., 1
+                paramValue = numRiders > 1 ? riderIndex / (numRiders - 1) : 0;
+              } else if (typeof parameter === "function") {
+                // Custom distribution function
+                // Pass frame information for dynamic parameter calculation
+                paramValue = parameter(
+                  riderIndex,
+                  numRiders,
+                  contactPoint,
+                  globalCpIndex,
+                  frameIndex,
+                  i,
+                );
+              }
+              // else: paramValue is a number (fixed parameter for all riders)
+
+              // Get target point on curve (parametric or nearest point mode)
+              const target =
+                paramValue !== null
+                  ? curveFn(paramValue) // Parametric mode: use calculated parameter
+                  : curveFn(pos); // Nearest point mode: find closest to current position
 
               // Calculate displacement vector from current position to target
               const dx = target.x - pos.x;
@@ -971,64 +1014,98 @@
 
     /**
      * Snaps contact points to arbitrary mathematical curves using damped spring physics
-     * @param {Function} closestPointFn - Function that takes {x, y} and returns {x, y, tangentX?, tangentY?} of closest point on curve
+     * Supports both parametric mode (specify position along curve) and nearest-point mode (snap to closest point)
+     *
+     * NOTE: Return values are FORCES (accelerations), not velocities. These forces are applied to contact points
+     * to achieve the desired motion.
+     *
+     * @param {Function} curveFn - Smart curve function that handles both modes:
+     *   - Parametric mode: (t: number) => {x, y, tangentX?, tangentY?} where t is typically 0-1
+     *   - Nearest point mode: (pos: {x, y}) => {x, y, tangentX?, tangentY?} where pos is current position
+     * @param {number|string|Function|null} parameter - Position mode:
+     *   - number: Fixed parametric position (0-1) for all riders
+     *   - 'distribute': Evenly space riders for wrapping curves (t = riderIndex / numRiders)
+     *   - 'distribute-span': Evenly space riders spanning 0 to 1 (t = riderIndex / (numRiders - 1))
+     *   - function: Custom distribution (riderIndex, numRiders, contactPoint, globalCpIndex, frameIndex, keyframeIndex) => t
+     *     Use frameIndex to create dynamic movement along curve (e.g., t = (riderIndex/numRiders + frameIndex*0.001) % 1)
+     *   - null: Snap to nearest point on curve
      * @param {number} maxForce - Maximum spring force to apply
      * @param {number} duration - Duration in frames to maintain snap
      * @param {Function} tweenFn - Optional tweening function that modulates spring strength (default: Tween.none)
      * @param {number} damping - Optional damping coefficient 0-1 (default: 0.5). Higher = more damping, less overshoot
-     * @param {number|Object} tangentForce - Optional constant tangent force. Number or {add: value} adds force along curve
+     * @param {number|Object} tangentForce - Optional constant tangent force (acceleration along curve)
      * @param {number} targetTangentVelocity - Optional target speed along curve. System continuously adjusts to maintain this velocity
      * @param {number} tangentVelocityGain - Optional gain for velocity control (default: 1.0). Higher = stronger corrections to reach target velocity
      * @returns {Function} Keyframe generator function
      *
      * @example
-     * // Snap to a circle with radius 100 centered at origin
-     * const circleSnap = (pos) => {
-     *   const angle = Math.atan2(pos.y, pos.x);
-     *   return { x: 100 * Math.cos(angle), y: 100 * Math.sin(angle) };
-     * };
-     * applyGravity([0, 1, 0], all, snapTo(circleSnap, 2, 40));
+     * // PARAMETRIC MODE: Position rider at t=0.25 on circle (90 degrees)
+     * applyGravity([0, 1, 0], all, snapTo(SnapCurves.circle(0, 0, 100), 0.25, 2, 40));
      *
      * @example
-     * // Snap to a parabola: y = a * x^2
-     * const parabolaSnap = (pos) => {
-     *   // Approximate closest point (exact solution requires numerical methods)
-     *   const a = 0.01;
-     *   return { x: pos.x, y: a * pos.x * pos.x };
-     * };
-     * applyGravity([0, 1, 0], all, snapTo(parabolaSnap, 3, 60, Tween.easeOutQuad));
+     * // NEAREST POINT MODE: Snap to closest point on circle
+     * applyGravity([0, 1, 0], all, snapTo(SnapCurves.circle(0, 0, 100), null, 2, 40));
      *
      * @example
-     * // Snap to circle with constant tangent acceleration
-     * const circleSnapWithTangent = (pos) => {
-     *   const angle = Math.atan2(pos.y, pos.x);
-     *   return {
-     *     x: 100 * Math.cos(angle),
-     *     y: 100 * Math.sin(angle),
-     *     tangentX: -Math.sin(angle),  // Counterclockwise tangent
-     *     tangentY: Math.cos(angle)
-     *   };
-     * };
-     * // Add constant tangent force of 0.1 to continuously accelerate along curve
-     * applyGravity([0, 1, 0], all, snapTo(circleSnapWithTangent, 2, 100, Tween.none, 0.5, 0.1));
+     * // AUTO-DISTRIBUTE: Evenly space all riders around a circle (wrapping curve)
+     * applyGravity([0, 1, 0], all, snapTo(SnapCurves.circle(0, 0, 100), 'distribute', 2, 40));
      *
      * @example
-     * // Maintain constant tangent velocity of 3 units/frame (cruise control)
-     * // System will speed up or slow down to reach and maintain this speed
-     * applyGravity([0, 1, 0], all, snapTo(circleSnapWithTangent, 2, 100, Tween.none, 0.5, null, 3));
+     * // AUTO-DISTRIBUTE SPAN: Evenly space riders from start to end of a line (non-wrapping)
+     * applyGravity([0, 1, 0], all, snapTo(SnapCurves.sine(50, 0.05), 'distribute-span', 2, 40));
      *
      * @example
-     * // Maintain velocity with stronger corrections (higher gain)
-     * // Higher gain = faster convergence to target speed, but may oscillate
-     * applyGravity([0, 1, 0], all, snapTo(circleSnapWithTangent, 2, 100, Tween.none, 0.5, null, 3, 2.0));
+     * // CUSTOM DISTRIBUTION: Use a function for advanced spacing
+     * applyGravity([0, 1, 0], all, snapTo(
+     *   SnapCurves.ellipse(0, 0, 100, 50),
+     *   (riderIndex, numRiders) => (riderIndex / numRiders) ** 2, // Quadratic spacing
+     *   2,
+     *   40
+     * ));
      *
      * @example
-     * // Combine constant force with velocity control
-     * // Add 0.05 force while maintaining speed around 2 units/frame
-     * applyGravity([0, 1, 0], all, snapTo(circleSnapWithTangent, 2, 100, Tween.none, 0.5, 0.05, 2, 0.5));
+     * // DYNAMIC PARAMETER: Advance along curve over time
+     * applyGravity([0, 1, 0], all, snapTo(
+     *   SnapCurves.circle(0, 0, 100),
+     *   (riderIndex, numRiders, cp, globalCp, frameIndex) => {
+     *     // Each rider starts at evenly distributed position, then advances along curve
+     *     const basePosition = riderIndex / numRiders;
+     *     const advancement = frameIndex * 0.001; // Advance 0.001 per frame
+     *     return (basePosition + advancement) % 1; // Wrap around at 1.0
+     *   },
+     *   2,
+     *   800
+     * ));
+     *
+     * @example
+     * // Snap to circle with constant tangent acceleration (force)
+     * applyGravity([0, 1, 0], all, snapTo(
+     *   SnapCurves.circle(0, 0, 100),
+     *   0.5,        // t=0.5 (180 degrees)
+     *   2,          // maxForce
+     *   100,        // duration
+     *   Tween.none,
+     *   0.5,        // damping
+     *   0.1         // tangentForce (acceleration along curve)
+     * ));
+     *
+     * @example
+     * // Maintain constant tangent velocity (cruise control)
+     * // Note: System applies forces to achieve target velocity
+     * applyGravity([0, 1, 0], all, snapTo(
+     *   SnapCurves.circle(0, 0, 100),
+     *   'distribute', // evenly space riders
+     *   2,
+     *   100,
+     *   Tween.none,
+     *   0.5,
+     *   null,       // no constant tangent force
+     *   3           // maintain velocity of 3 units/frame
+     * ));
      */
     function snapTo(
-      closestPointFn,
+      curveFn,
+      parameter,
       maxForce,
       duration,
       tweenFn = Tween.none,
@@ -1038,7 +1115,8 @@
       tangentVelocityGain = 1.0,
     ) {
       return snapToFn(
-        closestPointFn,
+        curveFn,
+        parameter,
         maxForce,
         duration,
         tweenFn,
@@ -1342,6 +1420,9 @@
               previousFrameData: cache.previousFrameData,
               previousRiderData,
               previousContactPointData,
+              globalCpIndex,
+              riderIndex,
+              numRiders,
             },
           });
 
@@ -1422,59 +1503,95 @@
      */
     const SnapCurves = {
       /**
-       * Creates a circle snap function
+       * Creates a circle snap function (supports both parametric and nearest-point modes)
        * @param {number} centerX - X coordinate of circle center
        * @param {number} centerY - Y coordinate of circle center
        * @param {number} radius - Radius of the circle
-       * @returns {Function} Closest point function for the circle
+       * @returns {Function} Smart curve function:
+       *   - (t: number) => point at angle t * 2π (parametric mode, t = 0 to 1)
+       *   - (pos: {x, y}) => nearest point on circle (nearest-point mode)
        */
-      circle: (centerX, centerY, radius) => (pos) => {
-        const dx = pos.x - centerX;
-        const dy = pos.y - centerY;
-        const angle = Math.atan2(dy, dx);
+      circle: (centerX, centerY, radius) => (input) => {
+        let angle;
+
+        if (typeof input === "number") {
+          // Parametric mode: t = 0 to 1 maps to full circle (0 to 2π)
+          angle = input * 2 * Math.PI;
+        } else {
+          // Nearest point mode: find angle to position
+          const dx = input.x - centerX;
+          const dy = input.y - centerY;
+          angle = Math.atan2(dy, dx);
+        }
+
         return {
           x: centerX + radius * Math.cos(angle),
           y: centerY + radius * Math.sin(angle),
-          tangentX: -Math.sin(angle), // Tangent is perpendicular to radius
+          tangentX: -Math.sin(angle), // Tangent is perpendicular to radius (counterclockwise)
           tangentY: Math.cos(angle),
         };
       },
 
       /**
-       * Creates an ellipse snap function
+       * Creates an ellipse snap function (supports both parametric and nearest-point modes)
        * @param {number} centerX - X coordinate of ellipse center
        * @param {number} centerY - Y coordinate of ellipse center
        * @param {number} radiusX - Horizontal radius
        * @param {number} radiusY - Vertical radius
-       * @returns {Function} Closest point function for the ellipse
+       * @returns {Function} Smart curve function:
+       *   - (t: number) => point at angle t * 2π (parametric mode, t = 0 to 1)
+       *   - (pos: {x, y}) => approximate nearest point on ellipse (nearest-point mode)
        */
-      ellipse: (centerX, centerY, radiusX, radiusY) => (pos) => {
-        const dx = pos.x - centerX;
-        const dy = pos.y - centerY;
-        const angle = Math.atan2(dy / radiusY, dx / radiusX);
+      ellipse: (centerX, centerY, radiusX, radiusY) => (input) => {
+        let angle;
+
+        if (typeof input === "number") {
+          // Parametric mode: t = 0 to 1 maps to full ellipse (0 to 2π)
+          angle = input * 2 * Math.PI;
+        } else {
+          // Nearest point mode: approximate using angle to center (not exact for ellipses)
+          const dx = input.x - centerX;
+          const dy = input.y - centerY;
+          angle = Math.atan2(dy, dx);
+        }
+
         return {
           x: centerX + radiusX * Math.cos(angle),
           y: centerY + radiusY * Math.sin(angle),
-          tangentX: -radiusX * Math.sin(angle), // Tangent to ellipse
+          tangentX: -radiusX * Math.sin(angle),
           tangentY: radiusY * Math.cos(angle),
         };
       },
 
       /**
-       * Creates a sine wave snap function
+       * Creates a sine wave snap function (supports both parametric and nearest-point modes)
        * @param {number} amplitude - Amplitude of the sine wave
        * @param {number} frequency - Frequency of the sine wave
+       * @param {number} phaseLength - Length of one complete phase (default: 2π/frequency)
+       * @param {number} offsetX - Horizontal offset (default: 0)
        * @param {number} offsetY - Vertical offset (default: 0)
-       * @returns {Function} Closest point function for the sine wave
+       * @returns {Function} Smart curve function:
+       *   - (t: number) => point at position t * phaseLength (parametric mode, t = 0 to 1)
+       *   - (pos: {x, y}) => vertically snap to sine at current x (nearest-point mode)
        */
       sine:
-        (amplitude, frequency, offsetY = 0) =>
-        (pos) => {
-          // Snap vertically to the sine curve at the current x position
-          const y = offsetY + amplitude * Math.sin(frequency * pos.x);
-          const slope = amplitude * frequency * Math.cos(frequency * pos.x);
+        (amplitude, frequency, phaseLength = null, offsetX = 0, offsetY = 0) =>
+        (input) => {
+          const actualPhaseLength = phaseLength ?? (2 * Math.PI) / frequency;
+          let x;
+
+          if (typeof input === "number") {
+            // Parametric mode: t = 0 to 1 maps to one phase length
+            x = offsetX + input * actualPhaseLength;
+          } else {
+            // Nearest point mode: snap vertically to the sine curve at current x position
+            x = input.x;
+          }
+
+          const y = offsetY + amplitude * Math.sin(frequency * x);
+          const slope = amplitude * frequency * Math.cos(frequency * x);
           return {
-            x: pos.x,
+            x: x,
             y: y,
             tangentX: 1, // Tangent along x-axis with slope
             tangentY: slope,
@@ -1482,39 +1599,54 @@
         },
 
       /**
-       * Creates a spiral snap function
+       * Creates a spiral snap function (supports both parametric and nearest-point modes)
        * @param {number} centerX - X coordinate of spiral center
        * @param {number} centerY - Y coordinate of spiral center
        * @param {number} growthRate - How fast the spiral expands
-       * @returns {Function} Closest point function for the spiral
+       * @param {number} rotations - Number of full rotations for t=0 to t=1 (default: 2)
+       * @returns {Function} Smart curve function:
+       *   - (t: number) => point at angle t * rotations * 2π (parametric mode, t = 0 to 1)
+       *   - (pos: {x, y}) => nearest point on spiral (nearest-point mode)
        */
-      spiral: (centerX, centerY, growthRate) => (pos) => {
-        const dx = pos.x - centerX;
-        const dy = pos.y - centerY;
-        const angle = Math.atan2(dy, dx);
-        const radius = growthRate * angle;
-        // Tangent to spiral: combination of radial growth and circular motion
-        const tangentX =
-          -radius * Math.sin(angle) + growthRate * Math.cos(angle);
-        const tangentY =
-          radius * Math.cos(angle) + growthRate * Math.sin(angle);
-        return {
-          x: centerX + radius * Math.cos(angle),
-          y: centerY + radius * Math.sin(angle),
-          tangentX: tangentX,
-          tangentY: tangentY,
-        };
-      },
+      spiral:
+        (centerX, centerY, growthRate, rotations = 2) =>
+        (input) => {
+          let angle;
+
+          if (typeof input === "number") {
+            // Parametric mode: t = 0 to 1 maps to specified number of rotations
+            angle = input * rotations * 2 * Math.PI;
+          } else {
+            // Nearest point mode: find angle to position
+            const dx = input.x - centerX;
+            const dy = input.y - centerY;
+            angle = Math.atan2(dy, dx);
+          }
+
+          const radius = growthRate * angle;
+          // Tangent to spiral: combination of radial growth and circular motion
+          const tangentX =
+            -radius * Math.sin(angle) + growthRate * Math.cos(angle);
+          const tangentY =
+            radius * Math.cos(angle) + growthRate * Math.sin(angle);
+          return {
+            x: centerX + radius * Math.cos(angle),
+            y: centerY + radius * Math.sin(angle),
+            tangentX: tangentX,
+            tangentY: tangentY,
+          };
+        },
 
       /**
-       * Creates a spiral snap function
-       * @param {number} centerX - X coordinate of spiral center
-       * @param {number} centerY - Y coordinate of spiral center
-       * @param {number} radius - The size of the gravity field
-       * @returns {Function} Closest point function for the spiral
+       * Creates a radial gravity function (note: this is a force function, not a snap curve)
+       * This function returns forces, not positions, so it doesn't support parametric mode
+       * @param {number} centerX - X coordinate of gravity center
+       * @param {number} centerY - Y coordinate of gravity center
+       * @param {number} radius - The size of the gravity field (threshold for push/pull)
+       * @returns {Function} Force function that takes position and returns force vector
        */
       radialGravity: (centerX, centerY, radius) => (pos) => {
-        const dx = centerX - pos.x; // center at 0,0
+        const dx = centerX - pos.x;
         const dy = centerY - pos.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
 

@@ -653,6 +653,124 @@
      * @param {number} damping - Damping coefficient (0-1). Higher = more damping. (default: 0.5)
      * @returns {Function} Function (startFrame, contactPoints) => keyframes
      */
+    function orbit(
+      centerX,
+      centerY,
+      radius,
+      speed,
+      radialStrength,
+      tangentialStrength,
+      attractionStrength,
+      duration,
+      leadingContactPoints = null,
+      tweenFn = Tween.none,
+      damping = 0.5,
+    ) {
+      return (startFrame, contactPoints) => {
+        const keyframes = [];
+        const totalRiders = Math.ceil(contactPoints.length / 17);
+
+        const leadingSet = leadingContactPoints
+          ? new Set(
+              Array.isArray(leadingContactPoints)
+                ? leadingContactPoints
+                : [leadingContactPoints],
+            )
+          : null;
+
+        for (let i = 0; i < duration; i++) {
+          keyframes.push([
+            startFrame + i,
+            contactPoints,
+            (keyframeContext) => {
+              const pos = keyframeContext.contactPointData.pos;
+              const vel = keyframeContext.contactPointData.vel;
+              const t = i / Math.max(duration - 1, 1);
+              const springStrength = tweenFn(t);
+
+              const riderIndex =
+                keyframeContext.riderIndex ??
+                Math.floor(keyframeContext.globalCpIndex / 17);
+              const numRiders = keyframeContext.numRiders ?? totalRiders;
+              const frameIndex = keyframeContext.frameIndex;
+              const contactPoint = keyframeContext.contactPoint;
+
+              const baseAngle = (riderIndex / numRiders) * 2 * Math.PI;
+
+              const toCenterX = pos.x - centerX;
+              const toCenterY = pos.y - centerY;
+              const currentRadius = Math.sqrt(
+                toCenterX * toCenterX + toCenterY * toCenterY,
+              );
+
+              if (currentRadius === 0) {
+                return {
+                  x: keyframeContext.lastDefaultGravity?.x ?? 0,
+                  y: keyframeContext.lastDefaultGravity?.y ?? 0.175,
+                };
+              }
+
+              const radialUnitX = toCenterX / currentRadius;
+              const radialUnitY = toCenterY / currentRadius;
+
+              const radialError = currentRadius - radius;
+              const radialForce =
+                -radialError * radialStrength * springStrength;
+
+              const tangentX = -radialUnitY;
+              const tangentY = radialUnitX;
+
+              const currentTangentSpeed = vel.x * tangentX + vel.y * tangentY;
+              const targetTangentSpeed = speed;
+              const tangentVelocityError =
+                targetTangentSpeed - currentTangentSpeed;
+              const tangentAcceleration =
+                tangentVelocityError * tangentialStrength;
+              const tangentDamping = -currentTangentSpeed * damping * 0.5;
+              const tangentForce =
+                (tangentAcceleration + tangentDamping) * springStrength;
+
+              const currentAngle = Math.atan2(pos.y - centerY, pos.x - centerX);
+              const targetAngle = baseAngle + frameIndex * speed * 0.01;
+              let angleDiff = targetAngle - currentAngle;
+              while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+              while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+
+              const angularCorrectionForce =
+                angleDiff * attractionStrength * springStrength;
+
+              const radialVelocity = vel.x * radialUnitX + vel.y * radialUnitY;
+              const dampingForceRadial = -damping * radialVelocity;
+
+              const totalRadialForce = radialForce + dampingForceRadial;
+
+              let forceX =
+                totalRadialForce * radialUnitX +
+                tangentForce * tangentX +
+                angularCorrectionForce * tangentX;
+              let forceY =
+                totalRadialForce * radialUnitY +
+                tangentForce * tangentY +
+                angularCorrectionForce * tangentY;
+
+              return { x: forceX, y: forceY };
+            },
+          ]);
+        }
+
+        keyframes.push([
+          startFrame + duration,
+          contactPoints,
+          (keyframeContext) => ({
+            x: keyframeContext.lastDefaultGravity?.x ?? 0,
+            y: keyframeContext.lastDefaultGravity?.y ?? 0.175,
+          }),
+        ]);
+
+        return keyframes;
+      };
+    }
+
     function lockToAxisFn(
       x,
       y,
@@ -797,335 +915,7 @@
      * };
      * applyGravity([0, 1, 0], all, snapTo(ellipseSnap, 2, 80, Tween.none, 0.7));
      *
-     * @example
-     * // Snap to circle with tangent acceleration
-     * const circleSnap = (pos) => {
-     *   const angle = Math.atan2(pos.y, pos.x);
-     *   return {
-     *     x: 100 * Math.cos(angle),
-     *     y: 100 * Math.sin(angle),
-     *     tangentX: -Math.sin(angle),  // Tangent for counterclockwise motion
-     *     tangentY: Math.cos(angle)
-     *   };
-     * };
-     * // Add constant tangent force to accelerate along curve
-     * applyGravity([0, 1, 0], all, snapTo(circleSnap, 2, 40, Tween.none, 0.5, 0.1));
-     * // Set tangent velocity to 5 units/frame
-     * applyGravity([0, 1, 0], all, snapTo(circleSnap, 2, 40, Tween.none, 0.5, null, 5));
-     */
-    function snapToFn(
-      curveFn,
-      parameter,
-      maxForce,
-      duration,
-      tweenFn = Tween.none,
-      damping = 0.5,
-      tangentForce = null,
-      targetTangentVelocity = null,
-      tangentVelocityGain = 1.0,
-    ) {
-      return (startFrame, contactPoints) => {
-        const keyframes = [];
-        const totalRiders = Math.ceil(contactPoints.length / 17);
 
-        for (let i = 0; i < duration; i++) {
-          keyframes.push([
-            startFrame + i,
-            contactPoints,
-            (keyframeContext) => {
-              const pos = keyframeContext.contactPointData.pos;
-              const vel = keyframeContext.contactPointData.vel;
-              const t = i / Math.max(duration - 1, 1); // Normalize time to 0-1
-              const springStrength = tweenFn(t); // 0-1 multiplier for spring force
-
-              // Determine the parameter value for this rider
-              let paramValue = parameter;
-
-              // Get rider context
-              const riderIndex =
-                keyframeContext.riderIndex ??
-                Math.floor(keyframeContext.globalCpIndex / 17);
-              const numRiders = keyframeContext.numRiders ?? totalRiders;
-              const contactPoint = keyframeContext.contactPoint;
-              const globalCpIndex = keyframeContext.globalCpIndex;
-              const frameIndex = keyframeContext.frameIndex;
-
-              if (parameter === null) {
-                // Nearest point mode
-                paramValue = null;
-              } else if (parameter === "distribute") {
-                // Even distribution for wrapping curves (circles, loops)
-                // Maps riders to: 0/n, 1/n, 2/n, ..., (n-1)/n
-                paramValue = riderIndex / Math.max(numRiders, 1);
-              } else if (parameter === "distribute-span") {
-                // Even distribution spanning full range (for non-wrapping curves)
-                // Maps riders to: 0/(n-1), 1/(n-1), ..., (n-1)/(n-1) = 0, ..., 1
-                paramValue = numRiders > 1 ? riderIndex / (numRiders - 1) : 0;
-              } else if (typeof parameter === "function") {
-                // Custom distribution function
-                // Pass frame information for dynamic parameter calculation
-                paramValue = parameter(
-                  riderIndex,
-                  numRiders,
-                  contactPoint,
-                  globalCpIndex,
-                  frameIndex,
-                  i,
-                );
-              }
-              // else: paramValue is a number (fixed parameter for all riders)
-
-              // Get target point on curve (parametric or nearest point mode)
-              const target =
-                paramValue !== null
-                  ? curveFn(paramValue) // Parametric mode: use calculated parameter
-                  : curveFn(pos); // Nearest point mode: find closest to current position
-
-              // Calculate displacement vector from current position to target
-              const dx = target.x - pos.x;
-              const dy = target.y - pos.y;
-
-              // Calculate distance for normalization
-              const distance = Math.sqrt(dx * dx + dy * dy);
-
-              // If already at target, return default gravity
-              if (distance === 0) {
-                return {
-                  x: keyframeContext.lastDefaultGravity?.x ?? 0,
-                  y: keyframeContext.lastDefaultGravity?.y ?? 0.175,
-                };
-              }
-
-              // Get tangent vector (direction along the curve)
-              let tangentX, tangentY;
-              if (
-                target.tangentX !== undefined &&
-                target.tangentY !== undefined
-              ) {
-                // Use provided tangent from closestPointFn
-                tangentX = target.tangentX;
-                tangentY = target.tangentY;
-              } else {
-                // Approximate tangent from velocity direction
-                const velMag = Math.sqrt(vel.x * vel.x + vel.y * vel.y);
-                if (velMag > 0.001) {
-                  tangentX = vel.x / velMag;
-                  tangentY = vel.y / velMag;
-                } else {
-                  // No velocity, use perpendicular to displacement as tangent
-                  tangentX = -dy / distance;
-                  tangentY = dx / distance;
-                }
-              }
-
-              // Normalize tangent vector
-              const tangentMag = Math.sqrt(
-                tangentX * tangentX + tangentY * tangentY,
-              );
-              if (tangentMag > 0) {
-                tangentX /= tangentMag;
-                tangentY /= tangentMag;
-              }
-
-              // Calculate normal vector (perpendicular to tangent, pointing toward target)
-              // Normal is 90° rotation of tangent
-              let normalX = -tangentY;
-              let normalY = tangentX;
-
-              // Ensure normal points toward target (not away)
-              const normalDot = normalX * dx + normalY * dy;
-              if (normalDot < 0) {
-                normalX = -normalX;
-                normalY = -normalY;
-              }
-
-              // Project displacement onto normal direction only
-              const normalDisplacement = dx * normalX + dy * normalY;
-
-              // Spring force along normal direction only
-              const springForceMagnitude =
-                springStrength *
-                maxForce *
-                Math.sign(normalDisplacement) *
-                Math.min(Math.abs(normalDisplacement), 1);
-
-              // Damping force only affects motion perpendicular to curve (normal direction)
-              const normalVelocity = vel.x * normalX + vel.y * normalY;
-              const dampingForceMagnitude =
-                -damping * maxForce * normalVelocity;
-
-              // Total force magnitude along normal
-              const totalForceMagnitude =
-                springForceMagnitude + dampingForceMagnitude;
-
-              // Clamp and apply force along normal direction
-              const clampedForce = Math.max(
-                -maxForce,
-                Math.min(maxForce, totalForceMagnitude),
-              );
-
-              let forceX = clampedForce * normalX;
-              let forceY = clampedForce * normalY;
-
-              // Apply tangent force if specified (constant force along curve)
-              if (tangentForce !== null) {
-                let tangentForceMagnitude;
-                if (
-                  typeof tangentForce === "object" &&
-                  tangentForce.add !== undefined
-                ) {
-                  tangentForceMagnitude = tangentForce.add;
-                } else if (typeof tangentForce === "number") {
-                  tangentForceMagnitude = tangentForce;
-                } else {
-                  tangentForceMagnitude = 0;
-                }
-
-                forceX += tangentForceMagnitude * tangentX;
-                forceY += tangentForceMagnitude * tangentY;
-              }
-
-              // Maintain target tangent velocity with proportional control (cruise control)
-              if (targetTangentVelocity !== null) {
-                const tangentVelocity = vel.x * tangentX + vel.y * tangentY;
-                const velocityError = targetTangentVelocity - tangentVelocity;
-                // Proportional control: force proportional to velocity error
-                const tangentControlForce = tangentVelocityGain * velocityError;
-
-                forceX += tangentControlForce * tangentX;
-                forceY += tangentControlForce * tangentY;
-              }
-
-              return { x: forceX, y: forceY };
-            },
-          ]);
-        }
-        keyframes.push([
-          startFrame + duration,
-          contactPoints,
-          (keyframeContext) => ({
-            x: keyframeContext.lastDefaultGravity?.x ?? 0,
-            y: keyframeContext.lastDefaultGravity?.y ?? 0.175,
-          }),
-        ]);
-        return keyframes;
-      };
-    }
-
-    /**
-     * Snaps contact points to arbitrary mathematical curves using damped spring physics
-     * Supports both parametric mode (specify position along curve) and nearest-point mode (snap to closest point)
-     *
-     * NOTE: Return values are FORCES (accelerations), not velocities. These forces are applied to contact points
-     * to achieve the desired motion.
-     *
-     * @param {Function} curveFn - Smart curve function that handles both modes:
-     *   - Parametric mode: (t: number) => {x, y, tangentX?, tangentY?} where t is typically 0-1
-     *   - Nearest point mode: (pos: {x, y}) => {x, y, tangentX?, tangentY?} where pos is current position
-     * @param {number|string|Function|null} parameter - Position mode:
-     *   - number: Fixed parametric position (0-1) for all riders
-     *   - 'distribute': Evenly space riders for wrapping curves (t = riderIndex / numRiders)
-     *   - 'distribute-span': Evenly space riders spanning 0 to 1 (t = riderIndex / (numRiders - 1))
-     *   - function: Custom distribution (riderIndex, numRiders, contactPoint, globalCpIndex, frameIndex, keyframeIndex) => t
-     *     Use frameIndex to create dynamic movement along curve (e.g., t = (riderIndex/numRiders + frameIndex*0.001) % 1)
-     *   - null: Snap to nearest point on curve
-     * @param {number} maxForce - Maximum spring force to apply
-     * @param {number} duration - Duration in frames to maintain snap
-     * @param {Function} tweenFn - Optional tweening function that modulates spring strength (default: Tween.none)
-     * @param {number} damping - Optional damping coefficient 0-1 (default: 0.5). Higher = more damping, less overshoot
-     * @param {number|Object} tangentForce - Optional constant tangent force (acceleration along curve)
-     * @param {number} targetTangentVelocity - Optional target speed along curve. System continuously adjusts to maintain this velocity
-     * @param {number} tangentVelocityGain - Optional gain for velocity control (default: 1.0). Higher = stronger corrections to reach target velocity
-     * @returns {Function} Keyframe generator function
-     *
-     * @example
-     * // PARAMETRIC MODE: Position rider at t=0.25 on circle (90 degrees)
-     * applyGravity([0, 1, 0], all, snapTo(SnapCurves.circle(0, 0, 100), 0.25, 2, 40));
-     *
-     * @example
-     * // NEAREST POINT MODE: Snap to closest point on circle
-     * applyGravity([0, 1, 0], all, snapTo(SnapCurves.circle(0, 0, 100), null, 2, 40));
-     *
-     * @example
-     * // AUTO-DISTRIBUTE: Evenly space all riders around a circle (wrapping curve)
-     * applyGravity([0, 1, 0], all, snapTo(SnapCurves.circle(0, 0, 100), 'distribute', 2, 40));
-     *
-     * @example
-     * // AUTO-DISTRIBUTE SPAN: Evenly space riders from start to end of a line (non-wrapping)
-     * applyGravity([0, 1, 0], all, snapTo(SnapCurves.sine(50, 0.05), 'distribute-span', 2, 40));
-     *
-     * @example
-     * // CUSTOM DISTRIBUTION: Use a function for advanced spacing
-     * applyGravity([0, 1, 0], all, snapTo(
-     *   SnapCurves.ellipse(0, 0, 100, 50),
-     *   (riderIndex, numRiders) => (riderIndex / numRiders) ** 2, // Quadratic spacing
-     *   2,
-     *   40
-     * ));
-     *
-     * @example
-     * // DYNAMIC PARAMETER: Advance along curve over time
-     * applyGravity([0, 1, 0], all, snapTo(
-     *   SnapCurves.circle(0, 0, 100),
-     *   (riderIndex, numRiders, cp, globalCp, frameIndex) => {
-     *     // Each rider starts at evenly distributed position, then advances along curve
-     *     const basePosition = riderIndex / numRiders;
-     *     const advancement = frameIndex * 0.001; // Advance 0.001 per frame
-     *     return (basePosition + advancement) % 1; // Wrap around at 1.0
-     *   },
-     *   2,
-     *   800
-     * ));
-     *
-     * @example
-     * // Snap to circle with constant tangent acceleration (force)
-     * applyGravity([0, 1, 0], all, snapTo(
-     *   SnapCurves.circle(0, 0, 100),
-     *   0.5,        // t=0.5 (180 degrees)
-     *   2,          // maxForce
-     *   100,        // duration
-     *   Tween.none,
-     *   0.5,        // damping
-     *   0.1         // tangentForce (acceleration along curve)
-     * ));
-     *
-     * @example
-     * // Maintain constant tangent velocity (cruise control)
-     * // Note: System applies forces to achieve target velocity
-     * applyGravity([0, 1, 0], all, snapTo(
-     *   SnapCurves.circle(0, 0, 100),
-     *   'distribute', // evenly space riders
-     *   2,
-     *   100,
-     *   Tween.none,
-     *   0.5,
-     *   null,       // no constant tangent force
-     *   3           // maintain velocity of 3 units/frame
-     * ));
-     */
-    function snapTo(
-      curveFn,
-      parameter,
-      maxForce,
-      duration,
-      tweenFn = Tween.none,
-      damping = 0.5,
-      tangentForce = null,
-      targetTangentVelocity = null,
-      tangentVelocityGain = 1.0,
-    ) {
-      return snapToFn(
-        curveFn,
-        parameter,
-        maxForce,
-        duration,
-        tweenFn,
-        damping,
-        tangentForce,
-        targetTangentVelocity,
-        tangentVelocityGain,
-      );
-    }
 
     /**
      * Interval functions for spacing keyframe application across contact point groups
@@ -1143,25 +933,6 @@
        * @returns {Function} Function that returns frame offset for group index
        */
       stagger: (frames) => (i) => i * frames,
-
-      /**
-       * Apply with exponential spacing
-       * @param {number} base - Base for exponential growth
-       * @param {number} scale - Scaling factor (default: 1)
-       * @returns {Function} Function that returns frame offset for group index
-       */
-      exponential:
-        (base, scale = 1) =>
-        (i) =>
-          Math.pow(base, i) * scale,
-
-      /**
-       * Apply with sinusoidal spacing
-       * @param {number} period - Period of the sine wave
-       * @param {number} amplitude - Amplitude of the sine wave
-       * @returns {Function} Function that returns frame offset for group index
-       */
-      sine: (period, amplitude) => (i) => Math.sin(i * period) * amplitude,
     };
 
     function getGravityForContactPoint({
@@ -1471,17 +1242,9 @@
 
 					- lockToAxis(x = null, y = null, maxForce, duration, tweenFn = Tween.none, damping = 0.5)
 					  Uses damped spring physics to lock contact points to target position.
-					  Spring force pulls toward target, damping prevents overshoot.
-					  Tween function modulates spring strength over time.
-					  Returns to the rider's last gravity after duration.
 
-					- snapTo(closestPointFn, maxForce, duration, tweenFn = Tween.none, damping = 0.5)
-					  Snaps contact points to arbitrary mathematical curves using damped spring physics.
-					  The closestPointFn takes current {x, y} and returns {x, y} of closest point on curve.
-					  Creates custom gravity wells that pull points toward the curve.
-					  Examples: circles, ellipses, sine waves, spirals - any mathematical function!
-					  Use SnapCurves helpers for common shapes (circle, ellipse, sine, spiral).
-					  Returns to the rider's last gravity after duration.
+					- orbit(centerX, centerY, radius, speed, maxForce, duration, tweenFn = Tween.none, damping = 0.5)
+					  Evenly distributes riders around a circle and moves them along it at given speed.
 
 					- adjustRider()
 					  Returns a chainable builder that produces a function (t, cp) => keyframes.
@@ -1498,181 +1261,18 @@
       singularity: SingularityPose,
     };
 
-    /**
-     * Helper functions for creating common curve snap functions
-     */
-    const SnapCurves = {
-      /**
-       * Creates a circle snap function (supports both parametric and nearest-point modes)
-       * @param {number} centerX - X coordinate of circle center
-       * @param {number} centerY - Y coordinate of circle center
-       * @param {number} radius - Radius of the circle
-       * @returns {Function} Smart curve function:
-       *   - (t: number) => point at angle t * 2π (parametric mode, t = 0 to 1)
-       *   - (pos: {x, y}) => nearest point on circle (nearest-point mode)
-       */
-      circle: (centerX, centerY, radius) => (input) => {
-        let angle;
-
-        if (typeof input === "number") {
-          // Parametric mode: t = 0 to 1 maps to full circle (0 to 2π)
-          angle = input * 2 * Math.PI;
-        } else {
-          // Nearest point mode: find angle to position
-          const dx = input.x - centerX;
-          const dy = input.y - centerY;
-          angle = Math.atan2(dy, dx);
-        }
-
-        return {
-          x: centerX + radius * Math.cos(angle),
-          y: centerY + radius * Math.sin(angle),
-          tangentX: -Math.sin(angle), // Tangent is perpendicular to radius (counterclockwise)
-          tangentY: Math.cos(angle),
-        };
-      },
-
-      /**
-       * Creates an ellipse snap function (supports both parametric and nearest-point modes)
-       * @param {number} centerX - X coordinate of ellipse center
-       * @param {number} centerY - Y coordinate of ellipse center
-       * @param {number} radiusX - Horizontal radius
-       * @param {number} radiusY - Vertical radius
-       * @returns {Function} Smart curve function:
-       *   - (t: number) => point at angle t * 2π (parametric mode, t = 0 to 1)
-       *   - (pos: {x, y}) => approximate nearest point on ellipse (nearest-point mode)
-       */
-      ellipse: (centerX, centerY, radiusX, radiusY) => (input) => {
-        let angle;
-
-        if (typeof input === "number") {
-          // Parametric mode: t = 0 to 1 maps to full ellipse (0 to 2π)
-          angle = input * 2 * Math.PI;
-        } else {
-          // Nearest point mode: approximate using angle to center (not exact for ellipses)
-          const dx = input.x - centerX;
-          const dy = input.y - centerY;
-          angle = Math.atan2(dy, dx);
-        }
-
-        return {
-          x: centerX + radiusX * Math.cos(angle),
-          y: centerY + radiusY * Math.sin(angle),
-          tangentX: -radiusX * Math.sin(angle),
-          tangentY: radiusY * Math.cos(angle),
-        };
-      },
-
-      /**
-       * Creates a sine wave snap function (supports both parametric and nearest-point modes)
-       * @param {number} amplitude - Amplitude of the sine wave
-       * @param {number} frequency - Frequency of the sine wave
-       * @param {number} phaseLength - Length of one complete phase (default: 2π/frequency)
-       * @param {number} offsetX - Horizontal offset (default: 0)
-       * @param {number} offsetY - Vertical offset (default: 0)
-       * @returns {Function} Smart curve function:
-       *   - (t: number) => point at position t * phaseLength (parametric mode, t = 0 to 1)
-       *   - (pos: {x, y}) => vertically snap to sine at current x (nearest-point mode)
-       */
-      sine:
-        (amplitude, frequency, phaseLength = null, offsetX = 0, offsetY = 0) =>
-        (input) => {
-          const actualPhaseLength = phaseLength ?? (2 * Math.PI) / frequency;
-          let x;
-
-          if (typeof input === "number") {
-            // Parametric mode: t = 0 to 1 maps to one phase length
-            x = offsetX + input * actualPhaseLength;
-          } else {
-            // Nearest point mode: snap vertically to the sine curve at current x position
-            x = input.x;
-          }
-
-          const y = offsetY + amplitude * Math.sin(frequency * x);
-          const slope = amplitude * frequency * Math.cos(frequency * x);
-          return {
-            x: x,
-            y: y,
-            tangentX: 1, // Tangent along x-axis with slope
-            tangentY: slope,
-          };
-        },
-
-      /**
-       * Creates a spiral snap function (supports both parametric and nearest-point modes)
-       * @param {number} centerX - X coordinate of spiral center
-       * @param {number} centerY - Y coordinate of spiral center
-       * @param {number} growthRate - How fast the spiral expands
-       * @param {number} rotations - Number of full rotations for t=0 to t=1 (default: 2)
-       * @returns {Function} Smart curve function:
-       *   - (t: number) => point at angle t * rotations * 2π (parametric mode, t = 0 to 1)
-       *   - (pos: {x, y}) => nearest point on spiral (nearest-point mode)
-       */
-      spiral:
-        (centerX, centerY, growthRate, rotations = 2) =>
-        (input) => {
-          let angle;
-
-          if (typeof input === "number") {
-            // Parametric mode: t = 0 to 1 maps to specified number of rotations
-            angle = input * rotations * 2 * Math.PI;
-          } else {
-            // Nearest point mode: find angle to position
-            const dx = input.x - centerX;
-            const dy = input.y - centerY;
-            angle = Math.atan2(dy, dx);
-          }
-
-          const radius = growthRate * angle;
-          // Tangent to spiral: combination of radial growth and circular motion
-          const tangentX =
-            -radius * Math.sin(angle) + growthRate * Math.cos(angle);
-          const tangentY =
-            radius * Math.cos(angle) + growthRate * Math.sin(angle);
-          return {
-            x: centerX + radius * Math.cos(angle),
-            y: centerY + radius * Math.sin(angle),
-            tangentX: tangentX,
-            tangentY: tangentY,
-          };
-        },
-
-      /**
-       * Creates a radial gravity function (note: this is a force function, not a snap curve)
-       * This function returns forces, not positions, so it doesn't support parametric mode
-       * @param {number} centerX - X coordinate of gravity center
-       * @param {number} centerY - Y coordinate of gravity center
-       * @param {number} radius - The size of the gravity field (threshold for push/pull)
-       * @returns {Function} Force function that takes position and returns force vector
-       */
-      radialGravity: (centerX, centerY, radius) => (pos) => {
-        const dx = centerX - pos.x;
-        const dy = centerY - pos.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        if (dist < radius) {
-          // Push outward
-          return { x: (-dx / dist) * 0.5, y: (-dy / dist) * 0.5 };
-        } else {
-          // Pull inward
-          return { x: (dx / dist) * 0.5, y: (dy / dist) * 0.5 };
-        }
-      },
-    };
-
     return {
+      orbit,
       setGravityKeyframes,
       Intervals,
       Poses,
       Tween,
-      SnapCurves,
 
       // Gravity functions
       setGravity,
       pulseGravity,
       teleport,
       lockToAxis,
-      snapTo,
       adjustRider,
       help,
     };
@@ -1681,6 +1281,7 @@
   window.GravityAPI = GravityAPI;
 
   // Expose all main functions globally with proper signatures
+  window.orbit = GravityAPI.orbit;
   window.applyGravity = GravityAPI.applyGravity;
   window.setGravityKeyframes = GravityAPI.setGravityKeyframes;
   window.triggerSubscriberHack = GravityAPI.triggerSubscriberHack;

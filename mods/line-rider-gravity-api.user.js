@@ -1252,6 +1252,10 @@
       triggerSubscriberHack();
     }
 
+    function calcCircleStagger(c, r, v) {
+      return Math.round((2 * Math.PI * r) / Math.abs(v) / c);
+    }
+
     /**
      * Triggers the gravity system by hooking into the engine's gravity property
      * @internal
@@ -1543,6 +1547,8 @@
       snapTo,
       adjustRider,
       help,
+
+      calcCircleStagger,
     };
   })();
 
@@ -1558,6 +1564,7 @@
   window.transformRider = GravityAPI.transformRider;
   window.lockToAxis = GravityAPI.lockToAxis;
   window.adjustRider = GravityAPI.adjustRider;
+  window.calcCircleStagger = GravityAPI.calcCircleStagger;
 
   // Expose constants
   window.Poses = GravityAPI.Poses;

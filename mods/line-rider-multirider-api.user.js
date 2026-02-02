@@ -156,6 +156,87 @@
     all() {
       return this.toContactPoints();
     }
+
+    /**
+     * RIDER FILTERING METHODS
+     * These methods filter the riders themselves and return new RiderSelection objects
+     */
+
+    /**
+     * Select every Nth rider
+     * @param {number} n - Select every Nth rider
+     * @param {number} offset - Starting offset (default: 0)
+     * @returns {RiderSelection} New RiderSelection with filtered riders
+     * @example getRidersByGroup("bob").everyNth(3).only(tail) // Every 3rd bob rider's tail
+     */
+    everyNth(n, offset = 0) {
+      const filtered = this.riderIndices.filter((_, i) => i % n === offset);
+      return new RiderSelection(filtered);
+    }
+
+    /**
+     * Select every other rider (shorthand for everyNth(2))
+     * @param {number} offset - Starting offset: 0 for even indices, 1 for odd (default: 0)
+     * @returns {RiderSelection} New RiderSelection with filtered riders
+     * @example getRidersByGroup("bob").everyOther().only(tail) // Every other bob rider
+     * @example getRidersByGroup("bob").everyOther(1).only(tail) // Odd-indexed riders
+     */
+    everyOther(offset = 0) {
+      return this.everyNth(2, offset);
+    }
+
+    /**
+     * Select first N riders
+     * @param {number} n - Number of riders to select from the start
+     * @returns {RiderSelection} New RiderSelection with first N riders
+     * @example getRidersByGroup("bob").first(5).only(tail)
+     */
+    first(n) {
+      return new RiderSelection(this.riderIndices.slice(0, n));
+    }
+
+    /**
+     * Select last N riders
+     * @param {number} n - Number of riders to select from the end
+     * @returns {RiderSelection} New RiderSelection with last N riders
+     * @example getRidersByGroup("bob").last(3).only(tail)
+     */
+    last(n) {
+      return new RiderSelection(this.riderIndices.slice(-n));
+    }
+
+    /**
+     * Select a slice of riders
+     * @param {number} start - Start index (inclusive)
+     * @param {number} end - End index (exclusive)
+     * @returns {RiderSelection} New RiderSelection with sliced riders
+     * @example getRidersByGroup("bob").slice(2, 8).only(tail) // Riders 2-7
+     */
+    slice(start, end) {
+      return new RiderSelection(this.riderIndices.slice(start, end));
+    }
+
+    /**
+     * Filter riders with a custom function
+     * @param {Function} fn - Filter function (index, riderIndex) => boolean
+     * @returns {RiderSelection} New RiderSelection with filtered riders
+     * @example getRidersByGroup("bob").filter((i) => i > 5).only(tail)
+     */
+    filter(fn) {
+      const filtered = this.riderIndices.filter((riderIndex, i) =>
+        fn(i, riderIndex),
+      );
+      return new RiderSelection(filtered);
+    }
+
+    /**
+     * Reverse the order of riders
+     * @returns {RiderSelection} New RiderSelection with reversed rider order
+     * @example getRidersByGroup("bob").reverse().only(tail)
+     */
+    reverse() {
+      return new RiderSelection([...this.riderIndices].reverse());
+    }
   }
 
   /**
@@ -558,9 +639,19 @@ SELECTING RIDERS (returns RiderSelection):
   getRidersNotInGroup(...groupNames) - Riders NOT in any of the groups
 
 RIDERSELECTION METHODS:
-  .all()              - Get all 17 contact points for selected riders
-  .only(pointGroup)   - Get only specific contact points
-  .exclude(pointGroup) - Get all except specific contact points
+  Contact Point Selection:
+    .all()              - Get all 17 contact points for selected riders
+    .only(pointGroup)   - Get only specific contact points
+    .exclude(pointGroup) - Get all except specific contact points
+
+  Rider Filtering (returns new RiderSelection for chaining):
+    .everyNth(n, offset=0)  - Select every Nth rider
+    .everyOther(offset=0)   - Select every other rider (even or odd)
+    .first(n)               - Select first N riders
+    .last(n)                - Select last N riders
+    .slice(start, end)      - Select a slice of riders
+    .filter(fn)             - Filter riders with custom function
+    .reverse()              - Reverse rider order
 
 PREDEFINED POINT GROUPS:
   Regions: all, sled, body, scarf, notScarf
@@ -587,6 +678,16 @@ COMPLETE EXAMPLES:
   getRidersByGroup('hero').all()         // Hero group, all points
   getRidersByGroup('main').exclude(scarf) // Main group without scarf
   getRidersNotInGroup('enemy').only(body) // Non-enemy riders, body only
+
+  // Chain rider filtering with contact point selection
+  getRidersByGroup('bob').everyNth(3).only(tail)      // Every 3rd bob rider's tail
+  getRidersByGroup('bob').everyOther().only(sled)     // Even-indexed bobs, sled only
+  getRidersByGroup('bob').everyOther(1).only(body)    // Odd-indexed bobs, body only
+  getRidersByGroup('circle').first(5).all()           // First 5 riders, all points
+  getRidersByGroup('line').last(3).only(feet)         // Last 3 riders, feet only
+  getRidersByGroup('team').slice(5, 10).only(hands)   // Riders 5-9, hands only
+  getAllRiders().filter((i) => i % 3 === 0).only(nose) // Custom filter
+  getRidersByGroup('wave').reverse().only(scarf)      // Reverse order
 
   // Use with Gravity API (if installed)
   setGravityKeyframes([

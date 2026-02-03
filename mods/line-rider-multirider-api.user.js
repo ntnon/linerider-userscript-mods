@@ -38,7 +38,7 @@
  * // Select riders by group and get contact points
  * const heroPoints = getRidersByGroup('hero').all();
  * const mainSled = getRidersByGroup('main').only(sled);
- * const allWithoutScarf = getAllRiders().exclude(scarf);
+ * const allWithoutScarf = allRiders().exclude(scarf);
  *
  * // Use with Gravity API
  * setGravityKeyframes([
@@ -634,7 +634,7 @@ MANAGING RIDERS:
   setRiders(riders)       - Replace all riders with new set (advanced)
 
 SELECTING RIDERS (returns RiderSelection):
-  getAllRiders()                    - All riders in scene
+  allRiders()                    - All riders in scene
   getRidersByGroup(...groupNames)   - Riders in any of the groups
   getRidersNotInGroup(...groupNames) - Riders NOT in any of the groups
 
@@ -674,8 +674,8 @@ COMPLETE EXAMPLES:
   );
 
   // Select specific riders and contact points
-  getAllRiders().only(sled)              // All riders, sled only
-  getRidersByGroup('hero').all()         // Hero group, all points
+  allRiders().only(sled)                  // All riders, sled only
+  getRidersByGroup('hero').all()          // Hero group, all points
   getRidersByGroup('main').exclude(scarf) // Main group without scarf
   getRidersNotInGroup('enemy').only(body) // Non-enemy riders, body only
 
@@ -686,7 +686,7 @@ COMPLETE EXAMPLES:
   getRidersByGroup('circle').first(5).all()           // First 5 riders, all points
   getRidersByGroup('line').last(3).only(feet)         // Last 3 riders, feet only
   getRidersByGroup('team').slice(5, 10).only(hands)   // Riders 5-9, hands only
-  getAllRiders().filter((i) => i % 3 === 0).only(nose) // Custom filter
+  getRidersByGroup('bob').filter((i) => i % 3 === 0).only(nose)   // Custom filter
   getRidersByGroup('wave').reverse().only(scarf)      // Reverse order
 
   // Use with Gravity API (if installed)
@@ -698,7 +698,7 @@ COMPLETE EXAMPLES:
 
     return {
       // Rider Getters (return RiderSelection objects)
-      getAllRiders: getAllRiderIndices,
+      allRiders: getAllRiderIndices,
       getRidersByGroup,
       getRidersNotInGroup,
 
@@ -725,7 +725,7 @@ COMPLETE EXAMPLES:
   // Expose PointGroups globally for easy access
   window.PointGroups = MultiRiderAPI.PointGroups;
   // Expose all functions globally
-  window.getAllRiders = MultiRiderAPI.getAllRiders;
+  window.allRiders = MultiRiderAPI.allRiders;
   window.getRidersByGroup = MultiRiderAPI.getRidersByGroup;
   window.getRidersNotInGroup = MultiRiderAPI.getRidersNotInGroup;
   window.addRider = MultiRiderAPI.addRider;

@@ -813,161 +813,101 @@
      * // Set tangent velocity to 5 units/frame
      * applyGravity([0, 1, 0], all, snapTo(circleSnap, 2, 40, Tween.none, 0.5, null, 5));
      */
-    function snapToFn(
-      closestPointFn,
-      maxForce,
-      duration,
-      tweenFn = Tween.none,
-      damping = 0.5,
-      tangentForce = null,
-      targetTangentVelocity = null,
-      tangentVelocityGain = 1.0,
-    ) {
-      return (startFrame, contactPoints) => {
-        const keyframes = [];
-        for (let i = 0; i < duration; i++) {
-          keyframes.push([
-            startFrame + i,
-            contactPoints,
-            (keyframeContext) => {
-              const pos = keyframeContext.contactPointData.pos;
-              const vel = keyframeContext.contactPointData.vel;
-              const t = i / Math.max(duration - 1, 1); // Normalize time to 0-1
-              const springStrength = tweenFn(t); // 0-1 multiplier for spring force
+     function snapToFn(
+       closestPointFn,
+       maxForce,
+       duration,
+       errorCorrectionFn = (error) => Math.min(1, error * 0.01), // Proportional error correction
+       damping = 0.5,
+       tangentForce = null,
+       targetTangentVelocity = null,
+       tangentVelocityGain = 1.0,
+     ) {
+       return (startFrame, contactPoints) => {
+         const keyframes = [];
+         for (let i = 0; i < duration; i++) {
+           keyframes.push([
+             startFrame + i,
+             contactPoints,
+             (keyframeContext) => {
+               const pos = keyframeContext.contactPointData.pos;
+               const vel = keyframeContext.contactPointData.vel;
 
-              // Find closest point on the curve (may include tangent info)
-              const target = closestPointFn(pos);
+               // Find closest point on the curve (may include tangent info)
+               const target = closestPointFn(pos);
 
-              // Calculate displacement vector from current position to target
-              const dx = target.x - pos.x;
-              const dy = target.y - pos.y;
+               // Ensure target is valid
+               if (!target || target.x === undefined || target.y === undefined) {
+                 console.warn("Closest point function returned null or invalid target. Using default gravity.");
+                 return {
+                   x: keyframeContext.lastDefaultGravity?.x ?? 0,
+                   y: keyframeContext.lastDefaultGravity?.y ?? 0.175,
+                 };
+               }
 
-              // Calculate distance for normalization
-              const distance = Math.sqrt(dx * dx + dy * dy);
+               // Calculate displacement vector from current position to target
+               const dx = target.x - pos.x;
+               const dy = target.y - pos.y;
 
-              // If already at target, return default gravity
-              if (distance === 0) {
-                return {
-                  x: keyframeContext.lastDefaultGravity?.x ?? 0,
-                  y: keyframeContext.lastDefaultGravity?.y ?? 0.175,
-                };
-              }
+               // Calculate distance (error) for normalization
+               const distance = Math.sqrt(dx * dx + dy * dy);
 
-              // Get tangent vector (direction along the curve)
-              let tangentX, tangentY;
-              if (
-                target.tangentX !== undefined &&
-                target.tangentY !== undefined
-              ) {
-                // Use provided tangent from closestPointFn
-                tangentX = target.tangentX;
-                tangentY = target.tangentY;
-              } else {
-                // Approximate tangent from velocity direction
-                const velMag = Math.sqrt(vel.x * vel.x + vel.y * vel.y);
-                if (velMag > 0.001) {
-                  tangentX = vel.x / velMag;
-                  tangentY = vel.y / velMag;
-                } else {
-                  // No velocity, use perpendicular to displacement as tangent
-                  tangentX = -dy / distance;
-                  tangentY = dx / distance;
-                }
-              }
+               // If already at target, return default gravity
+               if (distance === 0) {
+                 return {
+                   x: keyframeContext.lastDefaultGravity?.x ?? 0,
+                   y: keyframeContext.lastDefaultGravity?.y ?? 0.175,
+                 };
+               }
 
-              // Normalize tangent vector
-              const tangentMag = Math.sqrt(
-                tangentX * tangentX + tangentY * tangentY,
-              );
-              if (tangentMag > 0) {
-                tangentX /= tangentMag;
-                tangentY /= tangentMag;
-              }
+               // Normalize displacement vector
+               const normDx = dx / distance;
+               const normDy = dy / distance;
 
-              // Calculate normal vector (perpendicular to tangent, pointing toward target)
-              // Normal is 90° rotation of tangent
-              let normalX = -tangentY;
-              let normalY = tangentX;
+               // Apply error correction function to calculate spring force
+               const springForce = errorCorrectionFn(distance) * maxForce;
 
-              // Ensure normal points toward target (not away)
-              const normalDot = normalX * dx + normalY * dy;
-              if (normalDot < 0) {
-                normalX = -normalX;
-                normalY = -normalY;
-              }
+               // Calculate the spring force to apply
+               const forceX = normDx * springForce;
+               const forceY = normDy * springForce;
 
-              // Project displacement onto normal direction only
-              const normalDisplacement = dx * normalX + dy * normalY;
+               // Apply damping to counteract velocity
+               const dampingForceX = -damping * vel.x;
+               const dampingForceY = -damping * vel.y;
 
-              // Spring force along normal direction only
-              const springForceMagnitude =
-                springStrength *
-                maxForce *
-                Math.sign(normalDisplacement) *
-                Math.min(Math.abs(normalDisplacement), 1);
+               // Combine forces
+               let gravityX = forceX + dampingForceX;
+               let gravityY = forceY + dampingForceY;
 
-              // Damping force only affects motion perpendicular to curve (normal direction)
-              const normalVelocity = vel.x * normalX + vel.y * normalY;
-              const dampingForceMagnitude =
-                -damping * maxForce * normalVelocity;
+               // Add tangent force if specified
+               if (tangentForce !== null && target.tangentX !== undefined && target.tangentY !== undefined) {
+                 gravityX += tangentForce * target.tangentX;
+                 gravityY += tangentForce * target.tangentY;
+               }
 
-              // Total force magnitude along normal
-              const totalForceMagnitude =
-                springForceMagnitude + dampingForceMagnitude;
+               // Adjust for target tangent velocity if specified
+               if (targetTangentVelocity !== null && target.tangentX !== undefined && target.tangentY !== undefined) {
+                 const tangentVelocityX = target.tangentX * targetTangentVelocity;
+                 const tangentVelocityY = target.tangentY * targetTangentVelocity;
 
-              // Clamp and apply force along normal direction
-              const clampedForce = Math.max(
-                -maxForce,
-                Math.min(maxForce, totalForceMagnitude),
-              );
+                 gravityX += tangentVelocityGain * (tangentVelocityX - vel.x);
+                 gravityY += tangentVelocityGain * (tangentVelocityY - vel.y);
+               }
 
-              let forceX = clampedForce * normalX;
-              let forceY = clampedForce * normalY;
+               // Normalize the gravity force to ensure it doesn't exceed maxForce
+               const gravityMagnitude = Math.sqrt(gravityX * gravityX + gravityY * gravityY);
+               if (gravityMagnitude > maxForce) {
+                 gravityX = (gravityX / gravityMagnitude) * maxForce;
+                 gravityY = (gravityY / gravityMagnitude) * maxForce;
+               }
 
-              // Apply tangent force if specified (constant force along curve)
-              if (tangentForce !== null) {
-                let tangentForceMagnitude;
-                if (
-                  typeof tangentForce === "object" &&
-                  tangentForce.add !== undefined
-                ) {
-                  tangentForceMagnitude = tangentForce.add;
-                } else if (typeof tangentForce === "number") {
-                  tangentForceMagnitude = tangentForce;
-                } else {
-                  tangentForceMagnitude = 0;
-                }
-
-                forceX += tangentForceMagnitude * tangentX;
-                forceY += tangentForceMagnitude * tangentY;
-              }
-
-              // Maintain target tangent velocity with proportional control (cruise control)
-              if (targetTangentVelocity !== null) {
-                const tangentVelocity = vel.x * tangentX + vel.y * tangentY;
-                const velocityError = targetTangentVelocity - tangentVelocity;
-                // Proportional control: force proportional to velocity error
-                const tangentControlForce = tangentVelocityGain * velocityError;
-
-                forceX += tangentControlForce * tangentX;
-                forceY += tangentControlForce * tangentY;
-              }
-
-              return { x: forceX, y: forceY };
-            },
-          ]);
-        }
-        keyframes.push([
-          startFrame + duration,
-          contactPoints,
-          (keyframeContext) => ({
-            x: keyframeContext.lastDefaultGravity?.x ?? 0,
-            y: keyframeContext.lastDefaultGravity?.y ?? 0.175,
-          }),
-        ]);
-        return keyframes;
-      };
-    }
+               return { x: gravityX, y: gravityY };
+             },
+           ]);
+         }
+         return keyframes;
+       };
+     }
 
     /**
      * Snaps contact points to arbitrary mathematical curves using damped spring physics
@@ -1442,6 +1382,123 @@
           tangentX: -Math.sin(angle), // Tangent is perpendicular to radius
           tangentY: Math.cos(angle),
         };
+      },
+      /**
+       * Creates an octagon snap function
+       * @param {number} centerX - X coordinate of octagon center
+       * @param {number} centerY - Y coordinate of octagon center
+       * @param {number} radius - Distance from center to a vertex of the octagon
+       * @returns {Function} Closest point function for the octagon
+       */
+      octagon: (centerX, centerY, radius) => (pos) => {
+        const angleStep = Math.PI / 4; // 360° / 8 sides = 45° = π/4 radians
+        const vertices = [];
+
+        // Calculate the vertices of the octagon
+        for (let i = 0; i < 8; i++) {
+          const angle = angleStep * i - Math.PI / 8; // Offset by 22.5° to align the octagon
+          vertices.push({
+            x: centerX + radius * Math.cos(angle),
+            y: centerY + radius * Math.sin(angle),
+          });
+        }
+
+        // Find the closest point on the octagon's edges
+        let closestPoint = null;
+        let minDistance = Infinity;
+
+        for (let i = 0; i < vertices.length; i++) {
+          const v1 = vertices[i];
+          const v2 = vertices[(i + 1) % vertices.length]; // Wrap around to the first vertex
+
+          // Project the point onto the edge
+          const edgeDx = v2.x - v1.x;
+          const edgeDy = v2.y - v1.y;
+          const edgeLengthSquared = edgeDx * edgeDx + edgeDy * edgeDy;
+
+          const t = Math.max(0, Math.min(1, ((pos.x - v1.x) * edgeDx + (pos.y - v1.y) * edgeDy) / edgeLengthSquared));
+          const projX = v1.x + t * edgeDx;
+          const projY = v1.y + t * edgeDy;
+
+          // Calculate the distance from the point to the projection
+          const distSquared = (pos.x - projX) ** 2 + (pos.y - projY) ** 2;
+
+          if (distSquared < minDistance) {
+            minDistance = distSquared;
+            closestPoint = { x: projX, y: projY, tangentX: edgeDx / Math.sqrt(edgeLengthSquared), tangentY: edgeDy / Math.sqrt(edgeLengthSquared) };
+          }
+        }
+
+        return closestPoint;
+      },
+
+      square: (centerX, centerY, halfSize) => (pos) => {
+        const vertices = [
+          { x: centerX - halfSize, y: centerY - halfSize }, // Top-left
+          { x: centerX + halfSize, y: centerY - halfSize }, // Top-right
+          { x: centerX + halfSize, y: centerY + halfSize }, // Bottom-right
+          { x: centerX - halfSize, y: centerY + halfSize }, // Bottom-left
+        ];
+
+        // Find the closest point on the square's edges
+        let closestPoint = null;
+        let minDistance = Infinity;
+
+        for (let i = 0; i < vertices.length; i++) {
+          const v1 = vertices[i];
+          const v2 = vertices[(i + 1) % vertices.length]; // Wrap around to the first vertex
+
+          // Project the point onto the edge
+          const edgeDx = v2.x - v1.x;
+          const edgeDy = v2.y - v1.y;
+          const edgeLengthSquared = edgeDx * edgeDx + edgeDy * edgeDy;
+
+          const t = Math.max(0, Math.min(1, ((pos.x - v1.x) * edgeDx + (pos.y - v1.y) * edgeDy) / edgeLengthSquared));
+          const projX = v1.x + t * edgeDx;
+          const projY = v1.y + t * edgeDy;
+
+          // Calculate the distance from the point to the projection
+          const distSquared = (pos.x - projX) ** 2 + (pos.y - projY) ** 2;
+
+          if (distSquared < minDistance) {
+            minDistance = distSquared;
+            closestPoint = {
+              x: projX,
+              y: projY,
+              tangentX: edgeDx / Math.sqrt(edgeLengthSquared),
+              tangentY: edgeDy / Math.sqrt(edgeLengthSquared),
+            };
+          }
+        }
+
+        return closestPoint;
+      },
+
+
+      /**
+       * Creates a line snap function
+       * @param {number} x1 - X coordinate of the start of the line
+       * @param {number} y1 - Y coordinate of the start of the line
+       * @param {number} x2 - X coordinate of the end of the line
+       * @param {number} y2 - Y coordinate of the end of the line
+       * @returns {Function} Closest point function for the line
+       */
+      line: (x1, y1, x2, y2) => (pos) => {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const lengthSquared = dx * dx + dy * dy;
+
+        // Project the point onto the line segment
+        const t = Math.max(0, Math.min(1, ((pos.x - x1) * dx + (pos.y - y1) * dy) / lengthSquared));
+        const closestX = x1 + t * dx;
+        const closestY = y1 + t * dy;
+
+        // Calculate the tangent vector (normalized direction of the line)
+        const magnitude = Math.sqrt(dx * dx + dy * dy);
+        const tangentX = dx / magnitude;
+        const tangentY = dy / magnitude;
+
+        return { x: closestX, y: closestY, tangentX, tangentY };
       },
 
       /**

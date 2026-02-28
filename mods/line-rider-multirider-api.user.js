@@ -48,6 +48,7 @@
 (function () {
   "use strict";
 
+  // Contact point groups
   const ContactPoints = {
     PEG: 0,
     TAIL: 1,
@@ -67,16 +68,12 @@
     SCARF_5: 15,
     SCARF_6: 16,
   };
-
-  // Predefined contact point groups
   const PointGroups = {
-    all: [...Array(17).keys()], // All contact points (0-16)
+    all: [...Array(17).keys()],
     sled: [0, 1, 2, 3],
-    body: [4, 5, 6, 7, 8, 9], // Body parts only
+    body: [4, 5, 6, 7, 8, 9],
     scarf: [10, 11, 12, 13, 14, 15, 16],
     notScarf: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-
-    // Individual contact points as arrays for convenience
     peg: [0],
     tail: [1],
     nose: [2],
@@ -91,690 +88,197 @@
     feet: [8, 9],
   };
 
-  // Legacy aliases for backward compatibility
-  const sledPoints = PointGroups.sled;
-  const scarfPoints = PointGroups.scarf;
-  const riderPoints = PointGroups.body;
-  const notScarfPoints = PointGroups.notScarf;
-  const allPoints = PointGroups.all;
-
-  /**
-   * RiderSelection class - wraps rider indices and provides methods to convert to contact points
-   */
-  class RiderSelection {
-    constructor(riderIndices) {
-      this.riderIndices = Array.isArray(riderIndices)
-        ? riderIndices
-        : [riderIndices];
-      this._isRiderSelection = true; // Marker for GravityAPI to detect
-    }
-
-    /**
-     * Converts rider indices to contact point indices
-     * @param {Array} points - Optional array of contact point indices (0-16) to include. Defaults to all points.
-     * @returns {Array} Array of global contact point indices
-     */
-    toContactPoints(points = allPoints) {
-      const contactPoints = [];
-      this.riderIndices.forEach((riderIndex) => {
-        points.forEach((cpIndex) => {
-          contactPoints.push(riderIndex * 17 + cpIndex);
-        });
-      });
-      return contactPoints;
-    }
-
-    /**
-     * Keeps only specified contact points for each rider
-     * @param {Array} points - Contact point indices (0-16) to keep
-     * @returns {Array} Array of global contact point indices
-     */
-    only(points) {
-      if (!Array.isArray(points)) {
-        throw new Error("Expected an array for 'points'");
-      }
-      return this.toContactPoints(points);
-    }
-
-    /**
-     * Excludes specified contact points for each rider
-     * @param {Array} points - Contact point indices (0-16) to exclude
-     * @returns {Array} Array of global contact point indices
-     */
-    exclude(points) {
-      if (!Array.isArray(points)) {
-        throw new Error("Expected an array for 'points'");
-      }
-      const includedPoints = allPoints.filter((p) => !points.includes(p));
-      return this.toContactPoints(includedPoints);
-    }
-
-    /**
-     * Returns all contact points for the riders
-     * @returns {Array} Array of global contact point indices
-     */
-    all() {
-      return this.toContactPoints();
-    }
-
-    /**
-     * RIDER FILTERING METHODS
-     * These methods filter the riders themselves and return new RiderSelection objects
-     */
-
-    /**
-     * Select every Nth rider
-     * @param {number} n - Select every Nth rider
-     * @param {number} offset - Starting offset (default: 0)
-     * @returns {RiderSelection} New RiderSelection with filtered riders
-     * @example getRidersByGroup("bob").everyNth(3).only(tail) // Every 3rd bob rider's tail
-     */
-    everyNth(n, offset = 0) {
-      const filtered = this.riderIndices.filter((_, i) => i % n === offset);
-      return new RiderSelection(filtered);
-    }
-
-    /**
-     * Select every other rider (shorthand for everyNth(2))
-     * @param {number} offset - Starting offset: 0 for even indices, 1 for odd (default: 0)
-     * @returns {RiderSelection} New RiderSelection with filtered riders
-     * @example getRidersByGroup("bob").everyOther().only(tail) // Every other bob rider
-     * @example getRidersByGroup("bob").everyOther(1).only(tail) // Odd-indexed riders
-     */
-    everyOther(offset = 0) {
-      return this.everyNth(2, offset);
-    }
-
-    /**
-     * Select first N riders
-     * @param {number} n - Number of riders to select from the start
-     * @returns {RiderSelection} New RiderSelection with first N riders
-     * @example getRidersByGroup("bob").first(5).only(tail)
-     */
-    first(n) {
-      return new RiderSelection(this.riderIndices.slice(0, n));
-    }
-
-    /**
-     * Select last N riders
-     * @param {number} n - Number of riders to select from the end
-     * @returns {RiderSelection} New RiderSelection with last N riders
-     * @example getRidersByGroup("bob").last(3).only(tail)
-     */
-    last(n) {
-      return new RiderSelection(this.riderIndices.slice(-n));
-    }
-
-    /**
-     * Select a slice of riders
-     * @param {number} start - Start index (inclusive)
-     * @param {number} end - End index (exclusive)
-     * @returns {RiderSelection} New RiderSelection with sliced riders
-     * @example getRidersByGroup("bob").slice(2, 8).only(tail) // Riders 2-7
-     */
-    slice(start, end) {
-      return new RiderSelection(this.riderIndices.slice(start, end));
-    }
-
-    /**
-     * Filter riders with a custom function
-     * @param {Function} fn - Filter function (index, riderIndex) => boolean
-     * @returns {RiderSelection} New RiderSelection with filtered riders
-     * @example getRidersByGroup("bob").filter((i) => i > 5).only(tail)
-     */
-    filter(fn) {
-      const filtered = this.riderIndices.filter((riderIndex, i) =>
-        fn(i, riderIndex),
-      );
-      return new RiderSelection(filtered);
-    }
-
-    /**
-     * Reverse the order of riders
-     * @returns {RiderSelection} New RiderSelection with reversed rider order
-     * @example getRidersByGroup("bob").reverse().only(tail)
-     */
-    reverse() {
-      return new RiderSelection([...this.riderIndices].reverse());
-    }
-  }
-
-  /**
-   * RiderRepeater class - Chainable builder for creating multiple riders
-   * Extends Array so it can be used directly without .create()
-   */
-  class RiderRepeater extends Array {
-    constructor(count, groups = null, baseRider = null) {
-      super();
-      this._baseRider = baseRider;
-      this._count = count;
-      this._groupName = groups;
-
-      // Use baseRider if provided, otherwise create default riders with groups
-      const template = baseRider || makeRider(groups, 0, 0, 0, 0, 0, true);
-
-      // Create riders immediately based on template
-      for (let i = 0; i < count; i++) {
-        const copy = template.copy();
-        // Override groups if specified
-        if (groups) {
-          const groupSet =
-            groups instanceof Set
-              ? new Set(groups)
-              : new Set(Array.isArray(groups) ? groups : [groups]);
-          copy.groups = groupSet;
-        }
-        this.push(copy);
-      }
-    }
-
-    x(fn) {
-      this.forEach((rider, i) => {
-        rider.startPosition.x = fn(rider.startPosition.x, i);
-      });
-      return this;
-    }
-
-    y(fn) {
-      this.forEach((rider, i) => {
-        rider.startPosition.y = fn(rider.startPosition.y, i);
-      });
-      return this;
-    }
-
-    vx(fn) {
-      this.forEach((rider, i) => {
-        rider.startVelocity.x = fn(rider.startVelocity.x, i);
-      });
-      return this;
-    }
-
-    vy(fn) {
-      this.forEach((rider, i) => {
-        rider.startVelocity.y = fn(rider.startVelocity.y, i);
-      });
-      return this;
-    }
-
-    angle(fn) {
-      this.forEach((rider, i) => {
-        rider.startAngle = fn(rider.startAngle, i);
-      });
-      return this;
-    }
-
-    remountable(fn) {
-      this.forEach((rider, i) => {
-        rider.remountable = fn(rider.remountable, i);
-      });
-      return this;
-    }
-
-    group(fn) {
-      this.forEach((rider, i) => {
-        rider.groups = fn(rider.groups, i);
-      });
-      return this;
-    }
-
-    circle(radius) {
-      return this.x(
-        (x, i) => Math.cos((i / this._count) * Math.PI * 2) * radius,
-      ).y((y, i) => Math.sin((i / this._count) * Math.PI * 2) * radius);
-    }
-
-    grid(cols, spacing) {
-      return this.x((x, i) => (i % cols) * spacing).y(
-        (y, i) => Math.floor(i / cols) * spacing,
-      );
-    }
-
-    line(spacing, direction = "horizontal") {
-      if (direction === "horizontal") {
-        return this.x((x, i) => i * spacing);
-      } else {
-        return this.y((y, i) => i * spacing);
-      }
-    }
-  }
-
-  function repeatRider(count, groups = null, baseRider = null) {
-    return new RiderRepeater(count, groups, baseRider);
-  }
-
-  const MultiRiderAPI = (() => {
-    /**
-     * Resets gravity-related caches when rider configuration changes
-     * @private
-     */
-    function resetGravityCaches() {
-      if (window.__gravityStateCache) {
-        window.__gravityStateCache = {};
-      }
-      if (window.__gravityFrameCache) {
-        window.__gravityFrameCache = undefined;
-      }
-      if (window.__gravityIterationCounter !== undefined) {
-        window.__gravityIterationCounter = 0;
-      }
-      if (window.__keyframesByContactPoint) {
-        window.__keyframesByContactPoint = {};
-      }
-    }
-
-    /**
-     * Gets all riders currently in the scene
-     * @returns {Array} Array of rider objects
-     */
-    function getRiders() {
-      return window.Selectors.getRiders();
-    }
-
-    /**
-     * Sets the riders in the scene, replacing all existing riders
-     * @param {Object|Array} newRiders - Single rider or array of riders to set
-     */
-    function setRiders(newRiders) {
-      const ridersArr = Array.isArray(newRiders) ? newRiders : [newRiders];
-      window.Actions.setRiders(ridersArr);
-      window.Actions.commitTrackChanges();
-
-      // Reset gravity caches when rider count changes
-      resetGravityCaches();
-    }
-
-    /**
-     * Adds one or more riders to the scene
-     * @param {Object|Array} riders - Single rider or array of riders
-     */
-    function addRider(riders) {
-      const toAdd = Array.isArray(riders) ? riders : [riders];
-      const current = getRiders();
-      setRiders([...current, ...toAdd]);
-    }
-
-    /**
-     * Removes all riders from the scene
-     */
-    function clearRiders() {
-      setRiders([]);
-      // Cache reset is handled by setRiders()
-    }
-
-    /**
-     * Creates a new rider with chainable property setters
-     * @param {string|Array|Set} groups - Group name(s) for the rider
-     * @param {number} startPosX - Starting X position (default: 0)
-     * @param {number} startPosY - Starting Y position (default: 0)
-     * @param {number} startVelX - Starting X velocity (default: 0)
-     * @param {number} startVelY - Starting Y velocity (default: 0)
-     * @param {number} startAngle - Starting angle in degrees (default: 0)
-     * @param {boolean} remountable - Whether rider can remount (default: true)
-     * @returns {Object} Chainable rider object
-     */
-    function makeRider(
+  // Rider creation
+  function makeRider(
       groups,
-      startPosX = 0,
-      startPosY = 0,
-      startVelX = 0,
-      startVelY = 0,
-      startAngle = 0,
+      x = 0,
+      y = 0,
+      vx = 0,
+      vy = 0,
+      angle = 0,
       remountable = true,
-    ) {
-      if (!groups) groups = [];
-      const groupSet =
-        groups instanceof Set
-          ? new Set(groups)
-          : new Set(Array.isArray(groups) ? groups : [groups]);
-
-      const rider = {
-        groups: groupSet,
-        startPosition: { x: startPosX, y: startPosY },
-        startVelocity: { x: startVelX, y: startVelY },
-        startAngle: startAngle,
-        remountable: remountable,
-
-        // Chainable setters
-        x(value) {
-          this.startPosition.x = value;
-          return this;
-        },
-
-        y(value) {
-          this.startPosition.y = value;
-          return this;
-        },
-
-        vx(value) {
-          this.startVelocity.x = value;
-          return this;
-        },
-
-        vy(value) {
-          this.startVelocity.y = value;
-          return this;
-        },
-
-        pos(x, y) {
-          this.startPosition.x = x;
-          this.startPosition.y = y;
-          return this;
-        },
-
-        vel(vx, vy) {
-          this.startVelocity.x = vx;
-          this.startVelocity.y = vy;
-          return this;
-        },
-
-        angle(value) {
-          this.startAngle = value;
-          return this;
-        },
-
-        setRemountable(value) {
-          this.remountable = value;
-          return this;
-        },
-
-        addGroup(groupName) {
-          if (Array.isArray(groupName)) {
-            groupName.forEach((g) => this.groups.add(g));
-          } else {
-            this.groups.add(groupName);
-          }
-          return this;
-        },
-
-        removeGroup(groupName) {
-          this.groups.delete(groupName);
-          return this;
-        },
-
-        copy() {
-          return makeRider(
-            new Set(this.groups),
-            this.startPosition.x,
-            this.startPosition.y,
-            this.startVelocity.x,
-            this.startVelocity.y,
-            this.startAngle,
-            this.remountable,
-          );
-        },
-      };
-
-      return rider;
-    }
-
-    /**
-     * Creates multiple riders with chainable modifiers
-     * @param {Object} baseRider - Optional base rider to copy from
-     * @param {number} count - Number of riders to create
-     * @param {string|Array|Set} groups - Group name(s) for the riders
-     * @returns {RiderRepeater} Chainable array of riders
-     */
-    function repeatRider(count, groups = null, baseRider = null) {
-      return new RiderRepeater(count, groups, baseRider);
-    }
-
-    /**
-     * Gets all rider indices in the scene
-     * @returns {RiderSelection} RiderSelection object with rider indices
-     */
-    function getAllRiderIndices() {
-      const riders = getRiders();
-      const indices = riders.map((_, index) => index);
-      return new RiderSelection(indices);
-    }
-
-    /**
-     * Helper function to get rider indices from rider objects
-     * @param {Array} riders - Array of rider objects
-     * @returns {Array} Array of rider indices
-     */
-    function getRiderIndices(riders) {
-      const allRiders = getRiders();
-      return riders
-        .map((rider) => allRiders.indexOf(rider))
-        .filter((idx) => idx !== -1);
-    }
-
-    /**
-     * Gets rider indices that belong to any of the specified groups
-     * @param {...string} groupNames - One or more group names
-     * @returns {RiderSelection} RiderSelection object with matching rider indices
-     */
-    function getRidersByGroup(...groupNames) {
-      const riders = getRiders();
-      const matchingIndices = [];
-      riders.forEach((rider, index) => {
-        if (!(rider.groups instanceof Set)) return;
-        if (groupNames.some((groupName) => rider.groups.has(groupName))) {
-          matchingIndices.push(index);
-        }
-      });
-      return new RiderSelection(matchingIndices);
-    }
-
-    /**
-     * Gets rider indices that do NOT belong to any of the specified groups
-     * @param {...string} groupNames - One or more group names
-     * @returns {RiderSelection} RiderSelection object with non-matching rider indices
-     */
-    function getRidersNotInGroup(...groupNames) {
-      const riders = getRiders();
-      const matchingIndices = [];
-      riders.forEach((rider, index) => {
-        if (!(rider.groups instanceof Set)) {
-          matchingIndices.push(index);
-          return;
-        }
-        if (!groupNames.some((groupName) => rider.groups.has(groupName))) {
-          matchingIndices.push(index);
-        }
-      });
-      return new RiderSelection(matchingIndices);
-    }
-
-    /**
-     * Displays the complete MultiRider API guide in the console
-     */
-    function help() {
-      console.log(`
-=== MULTIRIDER API GUIDE ===
-
-CREATING RIDERS:
-  makeRider(groups, x, y, velX, velY, angle, remountable)
-    - groups: string, array, or Set (e.g., 'hero' or ['main', 'group2'])
-    - x, y: starting position (default: 0, 0)
-    - velX, velY: starting velocity (default: 0, 0)
-    - angle: starting angle in degrees (default: 0)
-    - remountable: boolean (default: true)
-    Example: makeRider('hero', 0, 0, 0.4, 0, 0, true)
-
-  repeatRider(groups, count, baseRider)
-    - Creates multiple riders with chainable modifiers
-    - groups: Group name(s) for the riders
-    - count: Number of riders to create
-    - baseRider: Optional rider template (default: rider at origin)
-
-    Chainable methods:
-      .x(fn)      - Modify x position: (x, index) => number
-      .y(fn)      - Modify y position: (y, index) => number
-      .vx(fn)     - Modify x velocity: (vx, index) => number
-      .vy(fn)     - Modify y velocity: (vy, index) => number
-      .angle(fn)  - Modify angle: (angle, index) => number
-      .group(fn)  - Modify groups: (groups, index) => Set
-
-    Helper methods:
-      .circle(radius)           - Arrange in circle
-      .grid(cols, spacing)      - Arrange in grid
-      .line(spacing, direction) - Arrange in line
-
-    Examples:
-      // Simple line
-      repeatRider('line', 10).x((x, i) => i * 10)
-
-      // Circle pattern
-      repeatRider('circle', 20)
-        .x((x, i) => Math.cos(i * 0.3) * 50)
-        .y((y, i) => Math.sin(i * 0.3) * 50)
-
-      // With base rider
-      const base = makeRider('hero', 0, 0, 0.4, 0);
-      repeatRider('clones', 5, base).x((x, i) => i * 10)
-
-      // Grid with velocity
-      repeatRider('grid', 25).grid(5, 10).vx((vx, i) => 0.4)
-
-MANAGING RIDERS:
-  addRider(rider)         - Add one or more riders (single object or array)
-  clearRiders()           - Remove all riders from scene
-  setRiders(riders)       - Replace all riders with new set (advanced)
-
-SELECTING RIDERS (returns RiderSelection):
-  allRiders()                    - All riders in scene
-  getRidersByGroup(...groupNames)   - Riders in any of the groups
-  getRidersNotInGroup(...groupNames) - Riders NOT in any of the groups
-
-RIDERSELECTION METHODS:
-  Contact Point Selection:
-    .all()              - Get all 17 contact points for selected riders
-    .only(pointGroup)   - Get only specific contact points
-    .exclude(pointGroup) - Get all except specific contact points
-
-  Rider Filtering (returns new RiderSelection for chaining):
-    .everyNth(n, offset=0)  - Select every Nth rider
-    .everyOther(offset=0)   - Select every other rider (even or odd)
-    .first(n)               - Select first N riders
-    .last(n)                - Select last N riders
-    .slice(start, end)      - Select a slice of riders
-    .filter(fn)             - Filter riders with custom function
-    .reverse()              - Reverse rider order
-
-PREDEFINED POINT GROUPS:
-  Regions: all, sled, body, scarf, notScarf
-  Individual: peg, tail, nose, string, butt, shoulder
-              rhand, lhand, rfoot, lfoot, hands, feet
-
-COMPLETE EXAMPLES:
-  // Create and add a single rider
-  addRider(makeRider('hero', 0, 0, 0.4, 0, 0, true));
-
-  // Create multiple riders with chainable API
-  addRider(repeatRider('circle', 20).circle(50).vx((vx, i) => 0.4));
-
-  // Complex pattern
-  addRider(
-    repeatRider('spiral', 30)
-      .x((x, i) => Math.cos(i * 0.3) * (i * 2))
-      .y((y, i) => Math.sin(i * 0.3) * (i * 2))
-      .vx((vx, i) => 0.4)
-  );
-
-  // Select specific riders and contact points
-  allRiders().only(sled)                  // All riders, sled only
-  getRidersByGroup('hero').all()          // Hero group, all points
-  getRidersByGroup('main').exclude(scarf) // Main group without scarf
-  getRidersNotInGroup('enemy').only(body) // Non-enemy riders, body only
-
-  // Chain rider filtering with contact point selection
-  getRidersByGroup('bob').everyNth(3).only(tail)      // Every 3rd bob rider's tail
-  getRidersByGroup('bob').everyOther().only(sled)     // Even-indexed bobs, sled only
-  getRidersByGroup('bob').everyOther(1).only(body)    // Odd-indexed bobs, body only
-  getRidersByGroup('circle').first(5).all()           // First 5 riders, all points
-  getRidersByGroup('line').last(3).only(feet)         // Last 3 riders, feet only
-  getRidersByGroup('team').slice(5, 10).only(hands)   // Riders 5-9, hands only
-  getRidersByGroup('bob').filter((i) => i % 3 === 0).only(nose)   // Custom filter
-  getRidersByGroup('wave').reverse().only(scarf)      // Reverse order
-
-  // Use with Gravity API (if installed)
-  setGravityKeyframes([
-    [[0, 2, 0], getRidersByGroup('hero').only(body), setGravity(0, 0.5, 80)]
-  ]);
-      `);
-    }
-
-    return {
-      // Rider Getters (return RiderSelection objects)
-      allRiders: getAllRiderIndices,
-      getRidersByGroup,
-      getRidersNotInGroup,
-
-      // Utility
-      setRiders,
-      addRider,
-      makeRider,
-      repeatRider,
-      clearRiders,
-      help,
-
-      // Classes
-      RiderSelection,
-      RiderRepeater,
-
-      // Point Groups
-      PointGroups,
+  ) {
+    const riderObj = {
+      groups: Array.isArray(groups) ? groups : [groups],
+      startPosition: { x, y },
+      startVelocity: { x: vx, y: vy },
+      startAngle: angle,
+      remountable,
     };
-  })();
 
-  // Expose MultiRiderAPI object
-  window.MultiRiderAPI = MultiRiderAPI;
+    // Return as a selection object for immediate use
+    return createSelection([riderObj]);
+  }
 
-  // Expose PointGroups globally for easy access
-  window.PointGroups = MultiRiderAPI.PointGroups;
-  // Expose all functions globally
-  window.allRiders = MultiRiderAPI.allRiders;
-  window.getRidersByGroup = MultiRiderAPI.getRidersByGroup;
-  window.getRidersNotInGroup = MultiRiderAPI.getRidersNotInGroup;
-  window.addRider = MultiRiderAPI.addRider;
-  window.makeRider = MultiRiderAPI.makeRider;
-  window.repeatRider = MultiRiderAPI.repeatRider;
-  window.setRiders = MultiRiderAPI.setRiders;
-  window.clearRiders = MultiRiderAPI.clearRiders;
-  window.RiderSelection = MultiRiderAPI.RiderSelection;
-  window.RiderRepeater = MultiRiderAPI.RiderRepeater;
+  // Generate multiple riders
+  function makeRiders(count, groups, opts = {}) {
+    const riders = [];
+    for (let i = 0; i < count; i++) {
+      const x = typeof opts.x === 'function' ? opts.x(i, count) : (opts.x || 0);
+      const y = typeof opts.y === 'function' ? opts.y(i, count) : (opts.y || 0);
+      const vx = typeof opts.vx === 'function' ? opts.vx(i, count) : (opts.vx || 0);
+      const vy = typeof opts.vy === 'function' ? opts.vy(i, count) : (opts.vy || 0);
+      const angle = typeof opts.angle === 'function' ? opts.angle(i, count) : (opts.angle || 0);
+      const remountable = typeof opts.remountable === 'function' ? opts.remountable(i, count) : (opts.remountable !== undefined ? opts.remountable : true);
 
-  // Expose individual point groups globally for convenience
-  const {
-    all,
-    sled,
-    body,
-    scarf,
-    notScarf,
-    peg,
-    tail,
-    nose,
-    string,
-    butt,
-    shoulder,
-    rhand,
-    lhand,
-    lfoot,
-    rfoot,
-    hands,
-    feet,
-  } = MultiRiderAPI.PointGroups;
-  window.all = all;
-  window.sled = sled;
-  window.body = body;
-  window.scarf = scarf;
-  window.notScarf = notScarf;
-  window.peg = peg;
-  window.tail = tail;
-  window.nose = nose;
-  window.string = string;
-  window.butt = butt;
-  window.shoulder = shoulder;
-  window.rhand = rhand;
-  window.lhand = lhand;
-  window.lfoot = lfoot;
-  window.rfoot = rfoot;
-  window.hands = hands;
-  window.feet = feet;
+      riders.push({
+        groups: Array.isArray(groups) ? groups : [groups],
+        startPosition: { x, y },
+        startVelocity: { x: vx, y: vy },
+        startAngle: angle,
+        remountable,
+      });
+    }
+    // Return as a selection object for immediate use
+    return createSelection(riders);
+  }
 
-  console.log(
-    "🚴 Multirider API loaded! All functions available globally. Type MultiRiderAPI.help() for API guide.",
-  );
+  // Add riders to scene
+  function addRiders(ridersOrSelections) {
+    const current = window.Selectors.getRiders();
+    let toAdd = [];
+
+    if (Array.isArray(ridersOrSelections)) {
+      toAdd = ridersOrSelections.map(r => {
+        if (r && r.riders && Array.isArray(r.riders)) {
+          return r.riders;
+        }
+        return r;
+      }).flat();
+    } else if (ridersOrSelections && ridersOrSelections.riders) {
+      toAdd = ridersOrSelections.riders;
+    } else {
+      toAdd = [ridersOrSelections];
+    }
+
+    window.Actions.setRiders([...current, ...toAdd]);
+    window.Actions.commitTrackChanges();
+  }
+
+  // Remove all riders
+  function clearRiders() {
+    window.Actions.setRiders([]);
+    window.Actions.commitTrackChanges();
+  }
+
+  // Select all riders
+  function riders() {
+    return window.Selectors.getRiders();
+  }
+
+  // Select riders by group
+  function group(groupName) {
+    return window.Selectors.getRiders().filter(
+        (r) => r.groups && r.groups.includes(groupName),
+    );
+  }
+
+  // Select a single rider by index
+  function rider(index) {
+    return window.Selectors.getRiders()[index];
+  }
+
+  // Create a selection object with contact point methods
+  function createSelection(riders, riderIndices = null) {
+    // Store rider references to track them
+    const riderRefs = riders.map((r, i) => ({
+      ref: r,
+      fixedIndex: riderIndices ? riderIndices[i] : null
+    }));
+
+    const selection = {
+      riders,
+      all() {
+        const result = [];
+        riderRefs.forEach((riderRef) => {
+          // If we have a fixed index, use it; otherwise find the rider in current scene
+          let globalIndex = riderRef.fixedIndex;
+          if (globalIndex === null) {
+            const allRiders = window.Selectors.getRiders();
+            globalIndex = allRiders.indexOf(riderRef.ref);
+          }
+
+          if (globalIndex !== -1) {
+            PointGroups.all.forEach((cpIndex) => {
+              result.push(globalIndex * 17 + cpIndex);
+            });
+          }
+        });
+        return result;
+      },
+      only(points) {
+        const result = [];
+        riderRefs.forEach((riderRef) => {
+          let globalIndex = riderRef.fixedIndex;
+          if (globalIndex === null) {
+            const allRiders = window.Selectors.getRiders();
+            globalIndex = allRiders.indexOf(riderRef.ref);
+          }
+
+          if (globalIndex !== -1) {
+            points.forEach((cpIndex) => {
+              result.push(globalIndex * 17 + cpIndex);
+            });
+          }
+        });
+        return result;
+      },
+      exclude(points) {
+        const included = PointGroups.all.filter((p) => !points.includes(p));
+        const result = [];
+        riderRefs.forEach((riderRef) => {
+          let globalIndex = riderRef.fixedIndex;
+          if (globalIndex === null) {
+            const allRiders = window.Selectors.getRiders();
+            globalIndex = allRiders.indexOf(riderRef.ref);
+          }
+
+          if (globalIndex !== -1) {
+            included.forEach((cpIndex) => {
+              result.push(globalIndex * 17 + cpIndex);
+            });
+          }
+        });
+        return result;
+      },
+    };
+
+    // Add array indexing support
+    return new Proxy(selection, {
+      get(target, prop) {
+        if (!isNaN(prop)) {
+          const idx = Number(prop);
+          if (riders[idx]) {
+            return createSelection([riders[idx]], [riderIndices ? riderIndices[idx] : idx]);
+          }
+          return undefined;
+        }
+        return target[prop];
+      },
+    });
+  }
+
+  // Override selection functions to return selection objects
+  const ridersOrig = riders;
+  riders = function() {
+    return createSelection(ridersOrig());
+  };
+
+  const groupOrig = group;
+  group = function(groupName) {
+    return createSelection(groupOrig(groupName));
+  };
+
+  // Expose API
+  window.multi = {
+    makeRider,
+    makeRiders,
+    addRiders,
+    clearRiders,
+    riders,
+    group,
+    rider,
+    PointGroups,
+    ContactPoints,
+  };
 })();

@@ -241,6 +241,18 @@
         });
         return result;
       },
+      filter(fn) {
+        const filtered = riders.filter(fn);
+        return createSelection(filtered);
+      },
+      everyOther(offset = 0) {
+        const filtered = riders.filter((_, i) => i % 2 === offset);
+        return createSelection(filtered);
+      },
+      slice(start, end) {
+        const sliced = riders.slice(start, end);
+        return createSelection(sliced);
+      },
     };
 
     // Add array indexing support
@@ -269,6 +281,12 @@
     return createSelection(groupOrig(groupName));
   };
 
+  // Scale function for zoom conversion: keyframes.map(([k,v])=>[k,v+Math.log2(toWidth/fromWidth)])
+  function scaleZoom(fromWidth, toWidth) {
+    const offset = Math.log2(toWidth / fromWidth);
+    return (kf) => [kf[0], kf[1] + offset];
+  }
+
   // Expose API
   window.multi = {
     makeRider,
@@ -280,5 +298,6 @@
     rider,
     PointGroups,
     ContactPoints,
+    scaleZoom,
   };
 })();
